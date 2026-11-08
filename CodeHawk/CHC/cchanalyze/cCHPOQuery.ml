@@ -898,6 +898,9 @@ object (self)
     let locinvio = invio#get_location_invariant cfgcontext in
     locinvio#get_var_invariants var
 
+  method get_context_invariants (ctxt: program_context_int): invariant_int list =
+    (invio#get_location_invariant ctxt#project_on_cfg)#get_invariants
+
   method get_errno_write_invariants: invariant_int list =
     let locinvio = invio#get_location_invariant cfgcontext in
     let maybe_errno_write_fact inv = 

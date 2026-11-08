@@ -1425,7 +1425,10 @@ object (self)
             let sym =
               new symbol_t ~atts ("assignedAt#" ^ (string_of_int loc.line)) in
             [make_c_cmd (ASSIGN_SYM (rvar, SYM sym))] in
-       Ok (callop :: (self#havoc_errno_write @ rcode))
+       (* An unknown target can overwrite escaped storage, including array
+          elements whose initialization facts are separate from the base. *)
+       let havoc = make_c_cmd (ABSTRACT_VARS env#get_memory_variables) in
+       Ok (callop :: havoc :: (self#havoc_errno_write @ rcode))
 
   method private get_postconditions
                    (fname:string) (args:exp list) (_fnargs:xpr_t list) =
@@ -1590,6 +1593,19 @@ object (self)
     let (pcs, epcs) = get_postconditions env#get_functionname (Some fname) context in
     let errno_sideeffect = self#get_errno_sideeffect fname (pcs, epcs) optrvar in
     let sideeffects = get_sideeffects env#get_functionname (Some fname) context in
+    (* Inferred postconditions are not a complete write footprint. Preserve
+       existing initialization only for a library summary or explicit effects
+       contract; otherwise an unknown writer can leave stale element facts. *)
+    let has_write_footprint =
+      match get_function_summary fname with
+      | Some _ -> true
+      | _ ->
+         CCHFileContract.file_contract#has_function_contract fname
+         && (CCHFileContract.file_contract#get_function_contract fname)
+              #get_sideeffects <> [] in
+    let memory_havoc =
+      if has_write_footprint then [] else
+        [make_c_cmd (ABSTRACT_VARS env#get_memory_variables)] in
     let _ =
       log_diagnostics_result
         ~tag:"get_sideeffect:sym"
@@ -1847,7 +1863,7 @@ object (self)
                 | _ -> []
               end
            | _ -> []) sideeffects) in
-    sitevarassigns :: xsitevarassigns :: errno_sideeffect @ seeffects
+    sitevarassigns :: xsitevarassigns :: memory_havoc @ errno_sideeffect @ seeffects
 
 end
 

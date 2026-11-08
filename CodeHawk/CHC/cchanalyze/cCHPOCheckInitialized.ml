@@ -153,6 +153,12 @@ object (self)
        end
     | _ ->
        match inv#expr with
+       | Some (XVar v) when poq#env#is_byte_sequence v ->
+          (match CCHMemoryInitialization.prove_memcpy_read poq v lval with
+           | Some (deps, msg) ->
+              Some (join_dependencies (DLocal [inv#index]) deps, msg,
+                    Some (__FILE__, __LINE__, mname))
+           | _ -> None)
        | Some (XVar v) when poq#env#is_initial_value v ->
           let var = poq#env#get_initial_value_variable v in
           if poq#env#is_memory_variable var then
@@ -637,7 +643,13 @@ object (self)
   method private var_implies_violation (invindex: int) (v: variable_t) =
     let mname = "var_implies_violation" in
     if poq#env#is_byte_sequence v then
-      let bsv = poq#env#get_byte_sequence_origin v in
+      if CCHMemoryInitialization.memcpy_call poq v <> None then
+        begin
+          poq#set_diagnostic
+            "memcpy requires initialized source bytes and sufficient copied extent";
+          None
+        end
+      else let bsv = poq#env#get_byte_sequence_origin v in
       let callee = poq#env#get_callvar_callee bsv in
       let deps = DLocal [invindex] in
       let msg = "value may be tainted by " ^ callee.vname in

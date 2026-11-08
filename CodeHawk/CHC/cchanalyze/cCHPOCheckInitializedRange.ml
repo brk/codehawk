@@ -365,7 +365,14 @@ object (self)
     | _ -> None
 
   method check_safe =
-    match self#unsigned_length_conflict with
+    let ctxt = poq#get_proof_obligation#get_context in
+    match CCHMemoryInitialization.prove_initialized_range poq ctxt e1 e2 with
+    | Some deps ->
+       begin
+         poq#record_safe_result deps "local source bytes are initialized";
+         true
+       end
+    | _ -> match self#unsigned_length_conflict with
     | Some _ -> false
     | _ ->
        match invs1 with

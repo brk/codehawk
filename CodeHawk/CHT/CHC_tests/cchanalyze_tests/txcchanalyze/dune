@@ -3,6 +3,7 @@
         cCHPOCheckLocallyInitializedTest
         cCHPOCheckOutputParameterInitializedTest
         cCHPOCheckErrnoWrittenTest
+        cCHPOCheckMemcpyInitializedTest
         )
   (deps
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz
@@ -18,5 +19,7 @@
         testinputs/PErrnoWritten/errno_written_fseek.cch.tar.gz
         testinputs/PErrnoWritten/errno_written_strtoul.cch.tar.gz
         testinputs/PErrnoWritten/cchsummaries.jar
+        testinputs/PInitialized/memcpy_initialization.cch.tar.gz
+        testinputs/PInitialized/memcpy_ranges.cch.tar.gz
         )
   (libraries chlib chutil cchlib cchpre cchanalyze tchlib tcchanalyze))
