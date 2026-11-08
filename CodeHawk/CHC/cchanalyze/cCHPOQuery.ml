@@ -807,6 +807,25 @@ object (self)
            ?(site: (string * int * string) option = None)
            (deps: dependencies_t)
            (expl: string) =
+    (* Initialization facts preserved or established by explicit contracts must
+       retain those assumptions. Conservatively include all modeled direct
+       calls in this function, even when a more precise path needs fewer. *)
+    let deps =
+      match po#get_predicate with
+      | PInitialized _ | PInitializedRange _ ->
+         let assumptions = List.concat (List.map (fun call ->
+             let callee = call#get_callee in
+             let callcfg = call#get_context#project_on_cfg in
+             if CCHContext.ccontexts#index_context callcfg
+                  = CCHContext.ccontexts#index_context cfgcontext then [] else
+             if file_contract#has_function_contract callee.vname then
+               let contract = file_contract#get_function_contract callee.vname in
+               List.map (fun p -> PostAssumption (callee.vid, p))
+                 (contract#get_postconditions @ contract#get_sideeffects)
+             else []) callsitemgr#get_direct_callsites) in
+         if assumptions = [] then deps else
+           join_dependencies deps (DEnvC ([], assumptions))
+      | _ -> deps in
     let _ = match deps with
       | DEnvC (_, assumptions) ->
          let (ppos, spos) = self#get_ppos_spos in

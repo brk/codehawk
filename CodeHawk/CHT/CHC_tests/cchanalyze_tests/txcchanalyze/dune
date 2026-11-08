@@ -4,6 +4,7 @@
         cCHPOCheckOutputParameterInitializedTest
         cCHPOCheckErrnoWrittenTest
         cCHPOCheckMemcpyInitializedTest
+        cCHPOCheckContractEffectsTest
         )
   (deps
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz
@@ -21,5 +22,7 @@
         testinputs/PErrnoWritten/cchsummaries.jar
         testinputs/PInitialized/memcpy_initialization.cch.tar.gz
         testinputs/PInitialized/memcpy_ranges.cch.tar.gz
+        testinputs/PContractEffects/contract_outputs.cch.tar.gz
+        testinputs/PContractEffects/contract_outputs_c.xml
         )
   (libraries chlib chutil cchlib cchpre cchanalyze tchlib tcchanalyze))

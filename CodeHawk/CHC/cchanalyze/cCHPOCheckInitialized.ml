@@ -144,7 +144,15 @@ object (self)
          match localAssigns with
          | [] -> None
          | _ ->
-            let deps = DLocal [inv#index] in
+            let modeled = List.filter_map (fun s ->
+                match s#getBaseName, s#getAttributes with
+                | "contract-initialized", [vid; pred] ->
+                   Some (PostAssumption (int_of_string vid,
+                     CCHInterfaceDictionary.interface_dictionary#get_xpredicate
+                       (int_of_string pred)))
+                | _ -> None) localAssigns in
+            let deps = if modeled = [] then DLocal [inv#index] else
+                DEnvC ([inv#index], modeled) in
             let msg =
               (String.concat
                  "_xx_" (List.map self#get_symbol_name localAssigns)) in
@@ -643,18 +651,14 @@ object (self)
   method private var_implies_violation (invindex: int) (v: variable_t) =
     let mname = "var_implies_violation" in
     if poq#env#is_byte_sequence v then
-      if CCHMemoryInitialization.memcpy_call poq v <> None then
-        begin
-          poq#set_diagnostic
-            "memcpy requires initialized source bytes and sufficient copied extent";
-          None
-        end
-      else let bsv = poq#env#get_byte_sequence_origin v in
+      let bsv = poq#env#get_byte_sequence_origin v in
       let callee = poq#env#get_callvar_callee bsv in
-      let deps = DLocal [invindex] in
-      let msg = "value may be tainted by " ^ callee.vname in
-      let site = Some (__FILE__, __LINE__, mname) in
-      Some (deps, msg, site)
+      let _ = poq#set_diagnostic
+          ~site:(Some (__FILE__, __LINE__, mname))
+          ("initialization of bytes written by " ^ callee.vname
+           ^ " is unknown; an opaque block write is not a violation") in
+      let _ = invindex in
+      None
     else
       None
 

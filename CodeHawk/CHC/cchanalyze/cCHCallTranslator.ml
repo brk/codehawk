@@ -128,6 +128,9 @@ let get_postconditions
      begin
        match get_function_summary callee with
        | Some fs -> (fs.fs_postconditions, fs.fs_error_postconditions)
+       | _ when CCHFileContract.file_contract#has_function_contract callee ->
+          (List.map (fun p -> p, NoAnnotation)
+             (CCHFileContract.file_contract#get_function_contract callee)#get_postconditions, [])
        | _ ->
           if proof_scaffolding#has_direct_callsite caller context then
             let directcallsite =
@@ -170,6 +173,9 @@ let get_sideeffects
      begin
        match get_function_summary callee with
        | Some fs -> fs.fs_sideeffects
+       | _ when CCHFileContract.file_contract#has_function_contract callee ->
+          List.map (fun p -> p, NoAnnotation)
+            (CCHFileContract.file_contract#get_function_contract callee)#get_sideeffects
        | _ ->
           if proof_scaffolding#has_direct_callsite caller context then
             let directcallsite =
@@ -704,7 +710,7 @@ object (self)
                          assign_se_struct arg NoOffset comp bwvar
                       | _ ->
                          [] in
-                    assign :: subassigns)
+                    assign :: (subassigns @ acc))
                   ~error:(fun e ->
                     begin
                       log_error_result
@@ -1185,7 +1191,7 @@ object (self)
                            assign_se_struct arg NoOffset comp bwvar
                         | _ ->
                            [] in
-                      assign :: subassigns)
+                      assign :: (subassigns @ acc))
                     ~error:(fun e ->
                     begin
                       log_error_result
@@ -1444,6 +1450,30 @@ object (self)
     List.concat
       (List.map (fun (pc, _) ->
            match pc with
+           | XInitialized (ArgAddressedValue
+                 (ArgValue (ParFormal n, ArgNoOffset), ArgNoOffset))
+                 when n > 0 && n <= List.length args ->
+              let arg = List.nth args (n - 1) in
+              let fvid = (TR.tget_ok (fdecls#get_varinfo_by_name fname)).vid in
+              let pix = CCHInterfaceDictionary.interface_dictionary#index_xpredicate pc in
+              let marker = new symbol_t
+                  ~atts:[string_of_int fvid; string_of_int pix] "contract-initialized" in
+              let rec initialize off typ =
+                let target = exp_translator#translate_lhs context (Mem arg, off) in
+                if target#isTmp then [] else
+                  let here = make_c_cmd (ASSIGN_SYM (target, SYM marker)) in
+                  match fenv#get_type_unrolled typ with
+                  | TComp (key, _) when (fenv#get_comp key).cstruct ->
+                     here :: List.concat (List.map (fun field ->
+                         if field.fbitfield <> None then [] else
+                           initialize (add_offset off
+                             (Field ((field.fname, key), NoOffset))) field.ftype)
+                           (fenv#get_comp key).cfields)
+                  | TComp _ | TArray _ -> []
+                  | _ -> [here] in
+              (match get_pointer_expr_target_type fdecls arg with
+               | Ok typ -> initialize NoOffset typ
+               | _ -> [])
            | XInitializedRange (base, len) ->
               let basevar =
                 match base with

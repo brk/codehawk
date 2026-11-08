@@ -1,0 +1,192 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="contract_outputs">
+    <functions>
+      <function name="optional_get">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="out" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <block-write />
+                <ci>out</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </sideeffect>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="unknown_output">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <block-write />
+                <ci>out</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </sideeffect>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="two_outputs">
+        <parameters>
+          <par name="first" nr="1" />
+          <par name="second" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value />
+                  <ci>first</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value />
+                  <ci>second</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value />
+                  <ci>first</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+          <post>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value />
+                  <ci>second</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <block-write />
+                <ci>first</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </sideeffect>
+          <sideeffect>
+            <math>
+              <apply>
+                <block-write />
+                <ci>second</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </sideeffect>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="post_only">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>
