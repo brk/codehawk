@@ -88,3 +88,36 @@ int missing_footprint_bad(void)
     post_only(&out);
     return keep;
 }
+
+typedef union { unsigned int full; unsigned char byte; } OutputUnion;
+typedef struct { struct { unsigned int value; } inner; int untouched; } NestedOutput;
+
+void union_field_output(OutputUnion *out) { out->full = 99; }
+unsigned int union_field_good(void)
+{
+    OutputUnion out;
+    union_field_output(&out);
+    return out.full;
+}
+
+void union_byte_output(OutputUnion *out) { out->byte = 1; }
+unsigned int union_wider_bad(void)
+{
+    OutputUnion out;
+    union_byte_output(&out);
+    return out.full;
+}
+
+void nested_field_output(NestedOutput *out) { out->inner.value = 99; }
+unsigned int nested_field_good(void)
+{
+    NestedOutput out;
+    nested_field_output(&out);
+    return out.inner.value;
+}
+int nested_sibling_bad(void)
+{
+    NestedOutput out;
+    nested_field_output(&out);
+    return out.untouched;
+}

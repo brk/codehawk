@@ -187,6 +187,122 @@
           </post>
         </postconditions>
       </function>
+      <function name="union_field_output">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="full" />
+                  </addressed-value>
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <block-write />
+                <ci>out</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </sideeffect>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="union_byte_output">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="byte" />
+                  </addressed-value>
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <block-write />
+                <ci>out</ci>
+                <cn>1</cn>
+              </apply>
+            </math>
+          </sideeffect>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="nested_field_output">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="inner">
+                      <field name="value" />
+                    </field>
+                  </addressed-value>
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <block-write />
+                <ci>out</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </sideeffect>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
     </functions>
   </cfile>
 </c-analysis>

@@ -10,7 +10,7 @@ let obligations name = proof_scaffolding#get_proof_obligations name
 
 let initialized_read name variable =
   let selected = List.filter (fun po -> match po#get_predicate with
-      | PInitialized (Var (v, _), NoOffset) -> v = variable
+      | PInitialized (Var (v, _), _) -> v = variable
       | _ -> false) (obligations name) in
   if selected = [] then failwith (name ^ ": missing initialized read of " ^ variable);
   selected
@@ -47,6 +47,10 @@ let () =
   conditional "frame_good" "keep";
   unresolved "block_write_invalidates_bad" "out";
   unresolved "missing_footprint_bad" "keep";
+  conditional "union_field_good" "out";
+  conditional "nested_field_good" "out";
+  unresolved "union_wider_bad" "out";
+  unresolved "nested_sibling_bad" "out";
   List.iter (fun (name, variable) ->
       let selected = List.filter (fun po -> match po#get_predicate with
           | PIndexUpperBound (Lval (Var (v, _), NoOffset), _) -> v = variable

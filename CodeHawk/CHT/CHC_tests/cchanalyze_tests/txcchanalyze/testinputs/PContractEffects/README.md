@@ -16,3 +16,8 @@ Block writes must invalidate old values and initialization. Both writes of a
 two-output function must be translated. A postcondition without a complete
 write footprint cannot preserve other memory. Initialization derived from
 these contracts, including frame facts, must retain model dependencies.
+
+Field postconditions include a full-width union member and a nested structure
+field. Both reads must remain conditional on the postcondition. Initializing
+one byte of a union cannot initialize a wider member, and a nested field cannot
+initialize its sibling. These two negative reads must remain unresolved.

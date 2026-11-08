@@ -1451,7 +1451,7 @@ object (self)
       (List.map (fun (pc, _) ->
            match pc with
            | XInitialized (ArgAddressedValue
-                 (ArgValue (ParFormal n, ArgNoOffset), ArgNoOffset))
+                 (ArgValue (ParFormal n, ArgNoOffset), fieldoffset))
                  when n > 0 && n <= List.length args ->
               let arg = List.nth args (n - 1) in
               let fvid = (TR.tget_ok (fdecls#get_varinfo_by_name fname)).vid in
@@ -1471,8 +1471,25 @@ object (self)
                            (fenv#get_comp key).cfields)
                   | TComp _ | TArray _ -> []
                   | _ -> [here] in
+              (* A field postcondition initializes only that field. In
+                 particular, a narrow union member says nothing about the
+                 remaining bytes of a wider member. *)
+              let rec select off typ = function
+                | ArgNoOffset -> initialize off typ
+                | ArgFieldOffset (name, rest) ->
+                   (match fenv#get_type_unrolled typ with
+                    | TComp (key, _) ->
+                       (match List.find_opt (fun f ->
+                           f.fname = name && f.fbitfield = None)
+                           (fenv#get_comp key).cfields with
+                        | Some field -> select
+                            (add_offset off (Field ((name, key), NoOffset)))
+                            field.ftype rest
+                        | _ -> [])
+                    | _ -> [])
+                | _ -> [] in
               (match get_pointer_expr_target_type fdecls arg with
-               | Ok typ -> initialize NoOffset typ
+               | Ok typ -> select NoOffset typ fieldoffset
                | _ -> [])
            | XInitializedRange (base, len) ->
               let basevar =
