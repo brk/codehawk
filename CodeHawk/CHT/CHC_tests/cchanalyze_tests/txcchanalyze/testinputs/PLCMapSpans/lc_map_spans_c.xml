@@ -150,6 +150,15 @@
               </apply>
             </math>
           </pre>
+          <pre>
+            <math>
+              <apply>
+                <no-overlap />
+                <ci>DestBuffer</ci>
+                <ci>SwapMap</ci>
+              </apply>
+            </math>
+          </pre>
         </preconditions>
         <postconditions>
           <post>
