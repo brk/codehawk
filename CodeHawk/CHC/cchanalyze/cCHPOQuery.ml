@@ -807,12 +807,13 @@ object (self)
            ?(site: (string * int * string) option = None)
            (deps: dependencies_t)
            (expl: string) =
-    (* Initialization facts preserved or established by explicit contracts must
+    (* Initialization and field-value facts preserved by explicit contracts must
        retain those assumptions. Conservatively include all modeled direct
        calls in this function, even when a more precise path needs fewer. *)
     let deps =
       match po#get_predicate with
-      | PInitialized _ | PInitializedRange _ ->
+      | PInitialized _ | PInitializedRange _
+      | PValueConstraint (BinOp (_, Lval (Var _, (Field _ | Index _)), _, _)) ->
          let assumptions = List.concat (List.map (fun call ->
              let callee = call#get_callee in
              let callcfg = call#get_context#project_on_cfg in

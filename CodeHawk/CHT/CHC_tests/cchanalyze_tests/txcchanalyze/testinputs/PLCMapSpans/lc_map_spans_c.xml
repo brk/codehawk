@@ -1,0 +1,202 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="lc_map_spans">
+    <functions>
+      <function name="LC_CopyBytesWithSwap">
+        <parameters>
+          <par name="DestBuffer" nr="1" />
+          <par name="SrcPtr" nr="2" />
+          <par name="SwapMap" nr="3" />
+          <par name="NumBytes" nr="4" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <leq />
+                <ci>NumBytes</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>DestBuffer</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>SrcPtr</ci>
+                <ci>NumBytes</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>SwapMap</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>SrcPtr</ci>
+                <ci>NumBytes</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>SwapMap</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="Unsigned32" />
+                  </addressed-value>
+                  <ci>DestBuffer</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <geq />
+                <ci>NumBytes</ci>
+                <cn>1</cn>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <lt />
+                <apply>
+                  <addressed-value>
+                    <field name="RawByte">
+                      <index i="0" />
+                    </field>
+                  </addressed-value>
+                  <ci>SwapMap</ci>
+                </apply>
+                <ci>NumBytes</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <lt />
+                <apply>
+                  <addressed-value>
+                    <field name="RawByte">
+                      <index i="1" />
+                    </field>
+                  </addressed-value>
+                  <ci>SwapMap</ci>
+                </apply>
+                <ci>NumBytes</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <lt />
+                <apply>
+                  <addressed-value>
+                    <field name="RawByte">
+                      <index i="2" />
+                    </field>
+                  </addressed-value>
+                  <ci>SwapMap</ci>
+                </apply>
+                <ci>NumBytes</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <lt />
+                <apply>
+                  <addressed-value>
+                    <field name="RawByte">
+                      <index i="3" />
+                    </field>
+                  </addressed-value>
+                  <ci>SwapMap</ci>
+                </apply>
+                <ci>NumBytes</ci>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="Unsigned32" />
+                  </addressed-value>
+                  <ci>DestBuffer</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <block-write />
+                <ci>DestBuffer</ci>
+                <ci>NumBytes</ci>
+              </apply>
+            </math>
+          </sideeffect>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="observe_map">
+        <parameters />
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

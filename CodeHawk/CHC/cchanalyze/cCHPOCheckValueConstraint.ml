@@ -172,6 +172,30 @@ object (self)
 
   method check_safe =
     match e with
+    | BinOp (op, Lval ((Var (_, vid), offset) as lv), bound, _)
+         when vid > 0 && offset <> NoOffset &&
+           Option.is_some (CCHMemoryInitialization.literal_value poq bound) ->
+       (* Exact nonnegative integer facts avoid changing the C comparison's
+          signed/unsigned meaning. Do not borrow a sibling field's value. *)
+       (match poq#env#get_varinfo vid, type_of_lval poq#fenv lv,
+              CCHMemoryInitialization.literal_value poq bound with
+        | Ok vi, Ok typ, Some (XConst (IntConst n))
+             when n#geq numerical_zero &&
+               (match CCHFileEnvironment.file_environment#get_type_unrolled typ with
+                | TInt _ -> true | _ -> false) ->
+           let fields = List.filter_map (fun (inv, off) ->
+               if CCHTypesCompare.offset_compare off offset = 0 then Some inv else None)
+               (poq#get_vinfo_offset_values vi) in
+           let fields = if vi.vglob then fields else
+               fields @ poq#get_var_invariants (poq#env#mk_stack_memory_variable
+                 vi offset vi.vtype CHLanguage.NUM_VAR_TYPE) in
+           List.exists (fun inv -> match inv#expr with
+                 | Some (XConst (IntConst v) as x) when v#geq numerical_zero ->
+                    (match self#xpr_safe op [inv#index] x (num_constant_expr n) with
+                     | Some (deps, msg) -> poq#record_safe_result deps msg; true
+                     | _ -> false)
+                 | _ -> false) fields
+        | _ -> false)
     | BinOp (op, Lval (Var (_vname, vid), NoOffset), Const (CInt (i64, _, _)), _)
          when vid > 0 ->
        TR.tfold
