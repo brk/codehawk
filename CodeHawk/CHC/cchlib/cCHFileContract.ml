@@ -376,6 +376,8 @@ object (self)
            self#read_xml_preconditions (getc "preconditions") gvars);
         (if hasc "postconditions" then
            self#read_xml_postconditions (getc "postconditions") gvars);
+        (if hasc "sideeffects" then
+           self#read_xml_sideeffects (getc "sideeffects") gvars);
         (if hasc "instrs" then
            self#read_xml_instrs (getc "instrs"))
       end
@@ -445,6 +447,18 @@ object (self)
          begin
            self#write_xml_postconditions pnode;
            node#appendChildren [pnode]
+         end);
+      (if sideeffects#size > 0 then
+         let snode = xmlElement "sideeffects" in
+         begin
+           snode#appendChildren
+             (List.map (fun ix ->
+                  let n = xmlElement "sideeffect" in
+                  begin
+                    write_xmlx_xpredicate n self#get_params (id#get_xpredicate ix);
+                    n
+                  end) sideeffects#toList);
+           node#appendChildren [snode]
          end);
     end
 
