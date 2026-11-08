@@ -1302,9 +1302,11 @@ let rec s_offset_to_offset (tgttype: typ) (s: s_offset_t): offset traceresult =
               "Unexpected target type for field " ^ fname ^ ": offset: "
               ^ (p2s (typ_to_pretty tgttype))]
      end
-  | ArgIndexOffset (n, ArgNoOffset) when n#equal numerical_zero -> Ok NoOffset
+  | ArgIndexOffset (n, ArgNoOffset) when n#equal numerical_zero &&
+      (match file_environment#get_type_unrolled tgttype with
+       | TArray _ | TPtr _ -> false | _ -> true) -> Ok NoOffset
   | ArgIndexOffset (n, ss) ->
-     match tgttype with
+     match file_environment#get_type_unrolled tgttype with
      | TArray (tt,_,_) | TPtr (tt, _) ->
         TR.tmap
           ~msg:(eloc __LINE__)

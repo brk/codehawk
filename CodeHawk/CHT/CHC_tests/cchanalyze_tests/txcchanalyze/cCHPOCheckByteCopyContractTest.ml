@@ -37,6 +37,15 @@ let () =
      "swap_uninitialized_tail_bad"; "swap_oversized_bad"];
   let fdecls = (CCHPreFileIO.read_function_semantics "swap_full_good").sdecls in
   let query = object method fenv = fdecls end in
+  let zero = CHNumerical.numerical_zero in
+  let indexzero = CCHLibTypes.ArgIndexOffset (zero, CCHLibTypes.ArgNoOffset) in
+  let array = TArray (TInt (IUChar, []), Some (Const (CInt (4L, IInt, None))), []) in
+  (match CCHPOPredicate.s_offset_to_offset array indexzero with
+   | Ok (Index (Const (CInt (0L, _, _)), NoOffset)) -> ()
+   | _ -> failwith "contract array index zero was dropped");
+  (match CCHPOPredicate.s_offset_to_offset (TInt (IUChar, [])) indexzero with
+   | Ok NoOffset -> ()
+   | _ -> failwith "scalar addressed index zero changed meaning");
   List.iter (fun (typ, value, expected) ->
       let exp = CastE (typ, Const (CInt (Int64.of_int value, IInt, None))) in
       let result = CCHMemoryInitialization.literal_value query exp in
