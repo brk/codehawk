@@ -46,12 +46,19 @@ let constant = function XConst (IntConst n) -> Some n | _ -> None
 
 let sizeof (poq: po_query_int) typ = constant (size_of_type poq#fenv typ)
 
-let literal_value poq = function
+let rec literal_value poq = function
   | Const (CInt (n, _, _)) -> Some (XConst (IntConst (mkNumericalFromInt64 n)))
   | SizeOf typ -> Some (size_of_type poq#fenv typ)
   | SizeOfE e ->
      (match type_of_exp poq#fenv e with
       | Ok typ -> Some (size_of_type poq#fenv typ)
+      | _ -> None)
+  | CastE (typ, e) ->
+     (match fenv#get_type_unrolled typ, literal_value poq e with
+      | TInt (ik, _), Some (XConst (IntConst n)) when ik <> IBool ->
+         let range = range_of_type poq#fenv typ in
+         if n#geq range#min && n#leq range#max then
+           Some (XConst (IntConst n)) else None
       | _ -> None)
   | _ -> None
 

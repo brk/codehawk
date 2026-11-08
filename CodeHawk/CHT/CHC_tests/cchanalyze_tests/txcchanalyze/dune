@@ -5,6 +5,7 @@
         cCHPOCheckErrnoWrittenTest
         cCHPOCheckMemcpyInitializedTest
         cCHPOCheckContractEffectsTest
+        cCHPOCheckByteCopyContractTest
         )
   (deps
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz
@@ -24,5 +25,7 @@
         testinputs/PInitialized/memcpy_ranges.cch.tar.gz
         testinputs/PContractEffects/contract_outputs.cch.tar.gz
         testinputs/PContractEffects/contract_outputs_c.xml
+        testinputs/PLCByteCopy/lc_copy_model.cch.tar.gz
+        testinputs/PLCByteCopy/lc_copy_model_c.xml
         )
   (libraries chlib chutil cchlib cchpre cchanalyze tchlib tcchanalyze))
