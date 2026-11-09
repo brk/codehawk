@@ -739,23 +739,16 @@ and get_arg
 
   | NamedConstant s -> ([], CnApp (s,[], TInt (IInt,[])), [])
 
-  | ArgAddressedValue (ptr, ArgNoOffset) ->
+  | ArgAddressedValue (ptr, soff) ->
     let (p, a, i) = get_arg env ptr args in
-    let expp =
-      TR.tfold
-        ~ok:(fun t -> [PLowerBound (t, a); PUpperBound (t, a)])
-        ~error:(fun err ->
-          begin
-            log_error_result
-              ~tag:"get_arg:ArgAddressedValue"
-              ~msg:env#functionname
-              __FILE__ __LINE__
-              [(String.concat "; " err);
-               "Unable to determine type of argument " ^ (p2s (exp_to_pretty a))];
-            []
-          end)
-        (type_of_exp env a) in
-    (p @ expp, Lval (Mem a,NoOffset),i)
+    let target = match get_pointer_expr_target_type env a with
+      | Ok t -> t
+      | Error e -> raise (CCHFailure (STR (String.concat "; " e))) in
+    let off = match s_offset_to_offset target soff with
+      | Ok o -> o
+      | Error e -> raise (CCHFailure (STR (String.concat "; " e))) in
+    (p @ [PNotNull a; PValidMem a; PLowerBound (target, a); PUpperBound (target, a)],
+     Lval (Mem a, off), i)
 
   | ArgNullTerminatorPos arg ->
     let (p, a, i) = get_arg env arg args in
@@ -1344,6 +1337,12 @@ args
     | XNotNull s -> let (p, a, i) = geta s in addx i (p @ [PNotNull a])
 
     | XNull s -> let (p, a, i) = geta s in addx i (p @ [PNull a])
+
+    | XInitialized s ->
+       let (p, a, i) = geta s in
+       (match a with
+        | Lval lv -> addx i (p @ [PInitialized lv])
+        | _ -> raise (CCHFailure (STR "initialized precondition requires an lvalue")))
 
     | XNullTerminated s ->
        let (p, a, i) = geta s in addx i (p @ [PNullTerminated a])

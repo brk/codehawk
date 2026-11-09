@@ -9,6 +9,7 @@
         cCHPOCheckMapSpanContractTest
         cCHPOCheckTableAcquisitionTest
         cCHPOCheckServiceOutputsTest
+        cCHPOCheckInitializedEntriesTest
         )
   (deps
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz
@@ -37,5 +38,7 @@
         testinputs/PTableAcquisition/table_acquisition_c.xml
         testinputs/PServiceOutputs/service_outputs.cch.tar.gz
         testinputs/PServiceOutputs/service_outputs_c.xml
+        testinputs/PInitializedEntries/service_entries.cch.tar.gz
+        testinputs/PInitializedEntries/service_entries_c.xml
         )
   (libraries chlib chutil cchlib cchpre cchanalyze tchlib tcchanalyze))

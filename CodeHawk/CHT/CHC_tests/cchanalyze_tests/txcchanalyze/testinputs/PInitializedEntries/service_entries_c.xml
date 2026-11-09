@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<c-analysis><cfile name="service_entries"><functions>
+<function name="optional"><parameters><par name="out" nr="1"/></parameters>
+<preconditions><pre><math><apply><initialized/><apply><addressed-value/><ci>out</ci></apply></apply></math></pre></preconditions>
+<postconditions><post><math><apply><initialized/><apply><addressed-value/><ci>out</ci></apply></apply></math></post></postconditions>
+<sideeffects><sideeffect><math><apply><block-write/><ci>out</ci><cn>4</cn></apply></math></sideeffect><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects>
+</function>
+<function name="field"><parameters><par name="out" nr="1"/></parameters>
+<preconditions><pre><math><apply><initialized/><apply><addressed-value><field name="value"/></addressed-value><ci>out</ci></apply></apply></math></pre></preconditions>
+<postconditions><post><math><apply><initialized/><apply><addressed-value><field name="value"/></addressed-value><ci>out</ci></apply></apply></math></post></postconditions>
+<sideeffects><sideeffect><math><apply><block-write/><ci>out</ci><cn>4</cn></apply></math></sideeffect><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects>
+</function>
+</functions></cfile></c-analysis>
