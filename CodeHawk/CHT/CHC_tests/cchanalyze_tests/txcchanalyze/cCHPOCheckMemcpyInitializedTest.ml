@@ -7,7 +7,7 @@ module CU = TCHCchanalyzeUtils
 
 let destination_read (po: proof_obligation_int) =
   match po#get_predicate with
-  | PInitialized (CCHBasicTypes.Var ("dest", _), _) -> true
+  | PInitialized (CCHBasicTypes.Var (("dest" | "datum"), _), _) -> true
   | _ -> false
 
 let check filename good bad =
@@ -31,7 +31,8 @@ let check filename good bad =
       if List.mem name ["copy_scalar_bad"; "copy_then_initialize_bad";
           "copy_branch_bad"; "copy_small_union_bad"; "copy_array_bad";
           "copy_chain_bad"; "copy_overwritten_array_bad";
-          "copy_unknown_write_bad"; "copy_indirect_write_bad"] then
+          "copy_unknown_write_bad"; "copy_indirect_write_bad"]
+         || (filename = "sb_received_bytes" && not expected_safe) then
         List.iter (fun po -> match po#get_predicate with
             | PInitializedRange _ when po#is_safe ->
                failwith (name ^ ": uninitialized source range was marked safe")
@@ -57,4 +58,13 @@ let () =
      "copy_chain_bad"; "copy_late_count_bad"; "copy_tail_field_bad";
      "copy_array_tail_bad"; "copy_overwritten_array_bad";
      "copy_unknown_write_bad"; "copy_indirect_write_bad"];
-  print_endline "memcpy initialization: 7 positive, 15 negative and 1 bounds control passed"
+  check "sb_received_bytes"
+    ["received_local_good"; "received_typed_stride_good";
+     "received_nested_offset_good"; "received_composed_offset_good"]
+    ["header_only_truncated_bad"; "capacity_without_initialization_bad";
+     "missing_last_byte_bad"; "zero_before_overwrite_bad";
+     "unknown_producer_bad"; "receive_without_contract_bad";
+     "next_receive_without_frame_bad"; "explicitly_released_bad";
+     "offset_missing_last_byte_bad"; "typed_stride_truncated_bad";
+     "negative_offset_bad"; "one_past_source_bad"];
+  print_endline "memcpy initialization: 11 positive, 27 negative and 1 bounds control passed"

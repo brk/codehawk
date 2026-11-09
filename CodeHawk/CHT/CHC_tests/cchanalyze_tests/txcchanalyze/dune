@@ -24,6 +24,7 @@
         testinputs/PErrnoWritten/cchsummaries.jar
         testinputs/PInitialized/memcpy_initialization.cch.tar.gz
         testinputs/PInitialized/memcpy_ranges.cch.tar.gz
+        testinputs/PInitialized/sb_received_bytes.cch.tar.gz
         testinputs/PContractEffects/contract_outputs.cch.tar.gz
         testinputs/PContractEffects/contract_outputs_c.xml
         testinputs/PLCByteCopy/lc_copy_model.cch.tar.gz

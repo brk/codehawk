@@ -70,6 +70,27 @@ let rec addressed_local = function
   | StartOf ((Var (_, vid), _) as lv) when vid > 0 -> Some lv
   | _ -> None
 
+(* Retain constant source pointer increments in bytes. The scale comes from
+   the pointer expression before removing its casts, not from the root object.
+   Unknown or negative increments are left to other proof paths. *)
+let rec addressed_source poq = function
+  | CastE (typ, e)
+       when (match fenv#get_type_unrolled typ with TPtr _ -> true | _ -> false) ->
+     addressed_source poq e
+  | BinOp (PlusPI, e, index, _) ->
+     (match addressed_source poq e, literal_value poq index,
+            type_of_exp poq#fenv e with
+      | Some (lv, start), Some x, Ok typ ->
+         (match constant x, fenv#get_type_unrolled typ with
+          | Some i, TPtr (elem, _) when i#geq numerical_zero ->
+             (match sizeof poq elem with
+              | Some sz when sz#gt numerical_zero ->
+                 Some (lv, start#add (i#mult sz))
+              | _ -> None)
+          | _ -> None)
+      | _ -> None)
+  | e -> Option.map (fun lv -> lv, numerical_zero) (addressed_local e)
+
 let local_type poq lv =
   match type_of_lval poq#fenv lv with
   | Ok typ -> Some (fenv#get_type_unrolled typ)
@@ -115,7 +136,7 @@ let assigned (inv: invariant_int) =
          && s#getAttributes = []) syms
   | _ -> false
 
-let initialized_local_bytes (poq: po_query_int) ctxt (lv: lval) count =
+let initialized_local_bytes ?(start=numerical_zero) (poq: po_query_int) ctxt (lv: lval) count =
   match lv with
   | Var (_, vid), offset ->
      (match poq#env#get_varinfo vid with
@@ -132,15 +153,17 @@ let initialized_local_bytes (poq: po_query_int) ctxt (lv: lval) count =
                      | Some o -> offset_compare o off = 0
                      | _ -> false)
                  | _ -> false) facts in
-         let rec prove typ off len =
+         let rec prove typ off first len =
            if len#equal numerical_zero then Some (DLocal []) else
              match fenv#get_type_unrolled typ, sizeof poq typ with
              | (TInt _ | TFloat ((FFloat | FDouble), _)), Some sz
-                  when len#gt numerical_zero && len#leq sz ->
+                  when first#geq numerical_zero && len#gt numerical_zero
+                       && (first#add len)#leq sz ->
                 (match initialized off with
                  | Some inv -> Some (DLocal [inv#index])
                  | _ -> None)
-             | TComp (key, _), Some sz when len#leq sz ->
+             | TComp (key, _), Some sz
+                  when first#geq numerical_zero && (first#add len)#leq sz ->
                 let comp = fenv#get_comp key in
                 if comp.cstruct then None else
                   List.fold_left (fun acc field ->
@@ -148,27 +171,30 @@ let initialized_local_bytes (poq: po_query_int) ctxt (lv: lval) count =
                       | Some _, _ -> acc
                       | _, Some _ -> None
                       | _ -> prove field.ftype
-                          (add_offset off (Field ((field.fname, key), NoOffset))) len)
+                          (add_offset off (Field ((field.fname, key), NoOffset))) first len)
                     None comp.cfields
-             | TArray (elem, _, _), Some sz when len#leq sz ->
+             | TArray (elem, _, _), Some sz
+                  when first#geq numerical_zero && (first#add len)#leq sz ->
                 (match sizeof poq elem with
                  | Some esz when esz#gt numerical_zero ->
-                    let rec elements index remaining deps =
+                    let rec elements index skip remaining deps =
                       if remaining#leq numerical_zero then Some deps else
-                        let part = if remaining#lt esz then remaining else esz in
+                        let available = esz#sub skip in
+                        let part = if remaining#lt available then remaining else available in
                         match prove elem
-                                (add_offset off (mk_constant_index_offset index)) part with
-                        | Some d -> elements (index#add numerical_one)
+                                (add_offset off (mk_constant_index_offset index)) skip part with
+                        | Some d -> elements (index#add numerical_one) numerical_zero
                             (remaining#sub part) (join_dependencies deps d)
                         | _ -> None in
-                    elements numerical_zero len (DLocal [])
+                    elements (first#div esz) (first#modulo esz) len (DLocal [])
                  | _ -> None)
              | _ -> None in
          (match local_type poq lv with
           | Some typ when count#geq numerical_zero ->
-             let result = prove typ offset count in
+             let result = prove typ offset start count in
              let _ = poq#set_key_diagnostic "copy-source-size"
-                 (vi.vname ^ ": requested bytes " ^ count#toString ^ "; type size: " ^
+                 (vi.vname ^ ": byte offset " ^ start#toString
+                  ^ "; requested bytes " ^ count#toString ^ "; type size: " ^
                     (match sizeof poq typ with Some n -> n#toString | _ -> "unknown")) in
              result
           | _ -> None)
@@ -176,10 +202,10 @@ let initialized_local_bytes (poq: po_query_int) ctxt (lv: lval) count =
   | _ -> None
 
 let prove_initialized_range poq ctxt address length =
-  match addressed_local address, literal_value poq length with
-  | Some lv, Some x ->
+  match addressed_source poq address, literal_value poq length with
+  | Some (lv, start), Some x ->
      (match constant x with
-      | Some n -> initialized_local_bytes poq ctxt lv n
+      | Some n -> initialized_local_bytes ~start poq ctxt lv n
       | _ -> None)
   | _ -> None
 
@@ -204,8 +230,8 @@ let prove_memcpy_read poq sequence (read: lval) =
            | _ ->
               (match literal_value poq length with
                | Some x -> constant x | _ -> None) in
-         (match addressed_local dest, addressed_local source, len, read with
-          | Some ((Var (_, dvid), doff) as dlv), Some slv, Some n,
+         (match addressed_local dest, addressed_source poq source, len, read with
+          | Some ((Var (_, dvid), doff) as dlv), Some (slv, sstart), Some n,
             (Var (_, rvid), roff) when dvid = rvid ->
              (match local_type poq dlv, local_type poq read,
                     offset_suffix doff roff with
@@ -213,7 +239,7 @@ let prove_memcpy_read poq sequence (read: lval) =
                 Some tail ->
                  (match relative_bytes poq dtyp tail, sizeof poq rtyp with
                   | Some start, Some width when (start#add width)#leq n ->
-                     (match initialized_local_bytes poq call#get_context slv n with
+                     (match initialized_local_bytes ~start:sstart poq call#get_context slv n with
                       | Some deps -> Some (deps,
                           "memcpy source bytes initialized at call; copied "
                           ^ n#toString ^ " bytes cover destination read")

@@ -25,3 +25,15 @@ it does not assume structure padding, arbitrary pointer targets, or unsupported
 layout/representation facts. Model-dependent storage and caller preconditions
 remain separate obligations. A byte sequence alone is not an initialization
 violation: missing copy evidence leaves the result unknown.
+
+`sb_received_bytes` adds four positive constant-offset copies: a byte array,
+typed two-byte element strides, nested arrays viewed as bytes, and composed
+increments. Twelve negative cases distinguish header length from capacity,
+missing initialized bytes, overwrites with uninitialized data, opaque producers
+and receive calls, the next receive without a lifetime frame, explicit release,
+truncated typed strides, negative offsets, and a one-past source. Their source
+range and destination initialization requirements must remain unresolved.
+The checker scales an increment using its actual pointer operand type and
+checks the selected byte interval against the complete local object before
+using assignment facts for each covered element. It does not grant storage or
+lifetime guarantees to an opaque SB receive call.
