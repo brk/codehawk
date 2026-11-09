@@ -190,7 +190,17 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
       | _ -> false) b.bstmts in
   Hashtbl.replace local_range_enabled env#get_functionname (block f.sbody);
   Hashtbl.replace local_alias_enabled env#get_functionname
-    (block f.sbody && aliases f.sbody)
+    (List.exists (function
+         | Attr ("codehawk_nested_scope_metadata_v1", []) -> true
+         | _ -> false) f.sbody.battrs
+     && block f.sbody && aliases f.sbody)
+
+(* Absence of a nested attribute is meaningful only with the parser's scope
+   metadata certificate above.  All nested aliases remain unsupported, even
+   before block exit: their exact lifetime is not represented by this domain. *)
+let function_scope_local vi =
+  not vi.vglob && not (List.exists (function
+      | Attr ("goblint_cil_nested", _) -> true | _ -> false) vi.vattr)
 
 let rec local_address_root = function
   | CastE (typ, e) when is_pointer_type typ -> local_address_root e
@@ -270,7 +280,7 @@ let safe_alias_slot (env: c_environment_int) lv =
   && match lv with
      | Var (_, vid), off ->
         (match env#get_varinfo vid with
-         | Ok vi -> not vi.vglob && not vi.vaddrof
+         | Ok vi -> function_scope_local vi && not vi.vaddrof
                     && not (range_type_volatile [] vi.vtype) && path vi.vtype off
          | _ -> false)
      | _ -> false
@@ -281,7 +291,7 @@ let exact_local_address (env: c_environment_int) = function
      (match memref#get_base with
       | CStackAddress stack when env#is_local_variable stack ->
          let (vi, baseoff) = env#get_local_variable stack in
-         if vi.vglob then None else
+         if not (function_scope_local vi) then None else
            Some ((Var (vi.vname, vi.vid), add_offset baseoff off), numerical_zero)
       | _ -> None)
   | _ -> None

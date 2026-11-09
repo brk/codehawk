@@ -242,6 +242,12 @@ let save_xml_file f =
       List.fold_left (fun a g ->
           match g with
           | GFun (fdec, _loc) -> fdec :: a | _ -> a) [] f.globals in
+    (* CIL flattens lexical blocks.  Certify that nested locals carry its
+       goblint_cil_nested attribute, so consumers can distinguish this output
+       from older parser files that have already lost that information. *)
+    let _ = List.iter (fun fn ->
+        fn.sbody.battrs <- Attr ("codehawk_nested_scope_metadata_v1", [])
+                          :: fn.sbody.battrs) fns in
     let _ =
       log_info "Found %d function(s) [%s:%d]" (List.length fns) __FILE__ __LINE__ in
     let _ =
@@ -266,6 +272,7 @@ let main () =
   try
     let _ = read_args () in
     let _ = cildeclarations#set_filename !filename in
+    let _ = Cabs2cil.addNestedScopeAttr := true in
     let cilfile = Frontc.parse !filename () in
     let _ = log_info "Parsed %s [%s:%d]" !filename __FILE__ __LINE__ in
     save_xml_file cilfile

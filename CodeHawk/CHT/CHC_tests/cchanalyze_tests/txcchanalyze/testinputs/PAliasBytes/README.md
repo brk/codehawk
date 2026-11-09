@@ -1,5 +1,9 @@
 Parser-only LP64 local alias/descriptor byte controls. Unsafe C is never run.
 
+Reparsed with certified nested-scope metadata. Exact alias lookup requires the
+certificate and function-scope slots/backing objects; nested aliases and legacy
+uncertified input stay unsupported (see PLocalLifetime).
+
 Only exact numeric local-address values of unaddressed local pointer/structure
 slots are accepted. Globals, escaped slots, union views, pointer/integer casts,
 explicit global-value contracts, ambiguous regions and numeric pointer arithmetic
