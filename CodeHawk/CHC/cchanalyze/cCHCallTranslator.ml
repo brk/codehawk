@@ -1448,6 +1448,20 @@ object (self)
        let ranges = ranges @ (match lhs with
            | Some lv -> CCHMemoryInitialization.byte_ranges_written env lv | _ -> []) in
        let clear = make_c_cmd (ABSTRACT_VARS ranges) in
+       let live_frame = has_complete_write_footprint fname
+         && List.exists (fun (p, _) -> p = XPreservesAllMemory) effects
+         && List.for_all (fun (p, _) -> match p with
+             | XPreservesAllMemory | XConstTerm _ | XBlockWrite _
+             | XInitializedRange _ -> true | _ -> false) effects in
+       let live_havoc = if live_frame then [] else
+           [make_c_cmd (ABSTRACT_VARS (CCHMemoryInitialization.allocated_live_variables env))] in
+       let live_start =
+         if fname = "malloc"
+            && proof_scaffolding#has_direct_callsite env#get_functionname context
+            && (proof_scaffolding#get_direct_callsite env#get_functionname context)
+                 #get_header = "lib:stdlib" then
+           CCHMemoryInitialization.start_allocated_lifetime env context
+         else [] in
        let initialized =
          if fname = "memset"
             && (match get_function_summary fname with Some _ -> true | _ -> false)
@@ -1456,8 +1470,11 @@ object (self)
                  #get_header = "lib:string" then
            CCHMemoryInitialization.memset_local_byte_range env
              (fun e -> Some (exp_translator#translate_exp context e)) args
+           @ CCHMemoryInitialization.memset_allocated_byte_range env
+             (fun e -> Some (exp_translator#translate_exp context e)) args
          else [] in
-       Ok (callop :: clear :: (sideeffect @ postconditions @ initialized @ rcode))
+       Ok (callop :: clear :: (live_havoc @ sideeffect @ postconditions
+                              @ live_start @ initialized @ rcode))
 
     | _ ->                                             (* indirect call *)
        let callop =
@@ -1478,7 +1495,8 @@ object (self)
        (* An unknown target can overwrite escaped storage, including array
           elements whose initialization facts are separate from the base. *)
        let havoc = make_c_cmd (ABSTRACT_VARS
-           (env#get_memory_variables @ CCHMemoryInitialization.local_byte_range_variables env)) in
+           (env#get_memory_variables @ CCHMemoryInitialization.local_byte_range_variables env
+            @ CCHMemoryInitialization.allocated_live_variables env)) in
        Ok (callop :: havoc :: (self#havoc_errno_write @ rcode))
 
   method private get_postconditions

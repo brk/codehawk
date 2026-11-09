@@ -14,6 +14,7 @@
         cCHPOCheckLocalBytesTest
         cCHPOCheckAliasBytesTest
         cCHPOCheckLocalLifetimeTest
+        cCHPOCheckAllocatedBytesTest
         )
   (deps
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz
@@ -52,5 +53,7 @@
         testinputs/PAliasBytes/alias_bytes_c.xml
         testinputs/PLocalLifetime/alias_lifetime.cch.tar.gz
         testinputs/PLocalLifetime/alias_lifetime_c.xml
+        testinputs/PAllocatedBytes/allocated_bytes.cch.tar.gz
+        testinputs/PAllocatedBytes/allocated_bytes_c.xml
         )
   (libraries chlib chutil cchlib cchpre cchanalyze tchlib tcchanalyze))

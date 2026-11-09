@@ -1,0 +1,3 @@
+<?xml version="1.0"?><c-analysis><cfile name="allocated_bytes"><functions>
+<function name="readonly_call"><parameters/><sideeffects><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects></function>
+</functions></cfile></c-analysis>
