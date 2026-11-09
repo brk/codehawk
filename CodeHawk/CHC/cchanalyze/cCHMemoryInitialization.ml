@@ -144,6 +144,8 @@ let rec relative_bytes poq typ off =
 let local_range_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
 let local_alias_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
 let guarded_outputs_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
+let guarded_output_contexts : (string, (int, bool) Hashtbl.t) Hashtbl.t =
+  Hashtbl.create 17
 
 let local_byte_range_variable (env: c_environment_int) vi =
   env#mk_augmentation_variable "$initialized-bytes$" "local-byte-range"
@@ -268,8 +270,7 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
        (match fenv#get_type_unrolled target with TInt _ -> status_slot lv | _ -> true)
        && conversion target source value
     | _ -> false in
-  let rec guarded b = List.for_all (fun s -> match s.skind with
-      | Instr ins -> List.for_all (function
+  let guarded_instruction = function
           | Set (lv, e, _) ->
              clval lv && casts e && (match type_of_exp f.sdecls e with
                  | Ok source -> assign lv source (Some e) | _ -> false)
@@ -282,15 +283,48 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
                        | TPtr (TFun (ret, _, _, _), _) -> assign lv ret None
                        | _ -> false)
                    | _ -> false))
-          | _ -> false) ins
-      | Return (e, _) -> (match e with Some e -> casts e | _ -> true)
-      | If (e, a, b, _) -> casts e && guarded a && guarded b
-      | Block b -> guarded b
-      | _ -> false) b.bstmts in
+          | _ -> false in
+  (* An unsupported conversion invalidates this path, not a sibling path that
+     cannot reach the read. Return has no fallthrough. Join the safety of all
+     continuing predecessors; never recover safety after a bad conversion.
+     Keep alias/control-flow exclusions global. The contexts mirror the
+     supported structured translation in cCHCfgTranslator. *)
+  let contexts = Hashtbl.create 17 in
+  let record ctxt safe =
+    Hashtbl.replace contexts ctxt#get_cfg_context#index safe in
+  let join a b = match a, b with
+    | None, x | x, None -> x
+    | Some a, Some b -> Some (a && b) in
+  let rec guarded_block ctxt state b =
+    List.fold_left (fun state s -> guarded_stmt (ctxt#add_stmt s.sid) state s)
+      state b.bstmts
+  and guarded_stmt ctxt state s =
+    let safe = state = Some true in
+    match s.skind with
+    | Instr ins ->
+       let result = List.fold_left (fun (i, state) ins ->
+           let next = state = Some true && guarded_instruction ins in
+           record (ctxt#add_instr i) next;
+           (i + 1, if state = None then None else Some next)) (0, state) ins in
+       snd result
+    | Return (e, _) ->
+       record ctxt#add_return
+         (safe && (match e with Some e -> casts e | _ -> true));
+       None
+    | If (e, a, b, _) ->
+       let next = safe && casts e in
+       record ctxt#add_if_expr next;
+       let incoming = if state = None then None else Some next in
+       join (guarded_block ctxt#add_if_then incoming a)
+         (guarded_block ctxt#add_if_else incoming b)
+    | Block b -> guarded_block ctxt state b
+    | _ -> Some false in
+  ignore (guarded_block (CCHContext.mk_program_context ()) (Some true) f.sbody);
+  Hashtbl.replace guarded_output_contexts env#get_functionname contexts;
   Hashtbl.replace local_range_enabled env#get_functionname (block f.sbody);
   Hashtbl.replace guarded_outputs_enabled env#get_functionname
     (List.exists (function Attr ("codehawk_nested_scope_metadata_v1", []) -> true | _ -> false)
-       f.sbody.battrs && block f.sbody && aliases f.sbody && guarded f.sbody);
+       f.sbody.battrs && block f.sbody && aliases f.sbody);
   Hashtbl.replace local_alias_enabled env#get_functionname
     (List.exists (function
          | Attr ("codehawk_nested_scope_metadata_v1", []) -> true
@@ -309,6 +343,9 @@ let guarded_output_initialization_enabled env =
 
 let guarded_return_dependency (poq: po_query_int) ctxt callctxt callee op bound =
   if not (guarded_output_initialization_enabled poq#env) then None else
+  if not (match Hashtbl.find_opt guarded_output_contexts poq#env#get_functionname with
+      | Some contexts -> Hashtbl.find_opt contexts ctxt#get_cfg_context#index = Some true
+      | _ -> false) then None else
   if not (List.for_all (fun g -> g#get_value = None)
       CCHFileContract.file_contract#get_globalvar_contracts) then None else
   let facts = poq#get_context_invariants ctxt in

@@ -1,0 +1,52 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="guard_precision">
+    <functions>
+      <function name="acquire">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="ge" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      </functions>
+  </cfile>
+</c-analysis>

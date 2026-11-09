@@ -16,6 +16,7 @@
         cCHPOCheckLocalLifetimeTest
         cCHPOCheckAllocatedBytesTest
         cCHPOCheckGuardedOutputsTest
+        cCHPOCheckGuardPrecisionTest
         )
   (deps
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz
@@ -58,5 +59,7 @@
         testinputs/PAllocatedBytes/allocated_bytes_c.xml
         testinputs/PGuardedOutputs/guarded_outputs.cch.tar.gz
         testinputs/PGuardedOutputs/guarded_outputs_c.xml
+        testinputs/PGuardPrecision/guard_precision.cch.tar.gz
+        testinputs/PGuardPrecision/guard_precision_c.xml
         )
   (libraries chlib chutil cchlib cchpre cchanalyze tchlib tcchanalyze))
