@@ -208,6 +208,17 @@ let get_sideeffects
          []
        end
 
+(* An output/value postcondition alone does not describe all writes. Keep
+   numeric facts about escaped storage only with a complete effects model,
+   just as in the symbolic initialization translator. *)
+let has_complete_write_footprint fname =
+  match get_function_summary fname with
+  | Some _ -> true
+  | _ ->
+     CCHFileContract.file_contract#has_function_contract fname
+     && (CCHFileContract.file_contract#get_function_contract fname)
+          #get_sideeffects <> []
+
 
 let make_range_assert env (v:variable_t) (lb:numerical_t) (ub:numerical_t) =
   let tmpProvider = (fun () -> env#mk_num_temp) in
@@ -391,7 +402,10 @@ object (self)
         else
           make_c_nop () in
       let sideeffects = self#get_sideeffects fname fvid args fnxargs in
-      Ok (argassigns @ [callop; assertfail; sideeffects] @ rcode)
+      let memory_havoc =
+        if has_complete_write_footprint fname then [] else
+          [make_c_cmd (ABSTRACT_VARS env#get_memory_variables)] in
+      Ok (argassigns @ [callop; assertfail] @ memory_havoc @ [sideeffects] @ rcode)
 
   method private set_indirect_call vinfo =
     if proof_scaffolding#has_indirect_callsite env#get_functionname context then
@@ -413,7 +427,7 @@ object (self)
                    (e: exp)
                    (args: exp list): nested_cmd_t list traceresult =
     let default =
-      Ok ([make_c_cmd
+      Ok (self#havoc_unknown_call lhs @ [make_c_cmd
              (OPERATION
                 { op_name = new symbol_t ~atts:[p2s (exp_to_pretty e)] "indirect call";
                   op_args = [] })]) in
@@ -450,7 +464,7 @@ object (self)
        end
 
   method private translate_indirect_call
-                   (_lhs: lval option)
+                   (lhs: lval option)
                    (f: exp)
                    (_args: exp list): nested_cmd_t list traceresult =
     begin
@@ -458,10 +472,16 @@ object (self)
         ~tag:"translate_indirect_call"
         ~msg:(env#get_functionname ^ "@" ^ (string_of_int location.line))
         __FILE__ __LINE__
-        ["Indirect call not yet supported. Call not included.";
+        ["Unknown indirect call: numeric memory and result abstracted.";
          "f: " ^ (p2s (exp_to_pretty f))];
-      Ok []
+      Ok (self#havoc_unknown_call lhs)
     end
+
+  method private havoc_unknown_call (lhs: lval option) =
+    let vars = match lhs with
+      | Some lv -> (exp_translator#translate_lhs context lv) :: env#get_memory_variables
+      | None -> env#get_memory_variables in
+    [make_c_cmd (ABSTRACT_VARS vars)]
 
   method private get_external_post_value
                    (postconditions:
@@ -1643,13 +1663,7 @@ object (self)
     (* Inferred postconditions are not a complete write footprint. Preserve
        existing initialization only for a library summary or explicit effects
        contract; otherwise an unknown writer can leave stale element facts. *)
-    let has_write_footprint =
-      match get_function_summary fname with
-      | Some _ -> true
-      | _ ->
-         CCHFileContract.file_contract#has_function_contract fname
-         && (CCHFileContract.file_contract#get_function_contract fname)
-              #get_sideeffects <> [] in
+    let has_write_footprint = has_complete_write_footprint fname in
     let memory_havoc =
       if has_write_footprint then [] else
         [make_c_cmd (ABSTRACT_VARS env#get_memory_variables)] in
