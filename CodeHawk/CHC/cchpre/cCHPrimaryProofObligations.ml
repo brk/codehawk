@@ -1434,29 +1434,16 @@ args
       | XInitializedRange (dest, len) ->
        let (p1, destArg, i1) = geta dest in
        let (p2, len, i2) = geta len in
-       let destType = get_tgttyp destArg in
-       let typesize = size_of_type env destType in
-       begin
-         match typesize with
-         | XConst (IntConst n) ->
-            let tlen =
-              BinOp
-                (Div,
-                 len,
-                 Const (CInt (Int64.of_string n#toString, IUInt, None)),
-                 TInt (IUInt, [])) in
-            (addx i1 p1)
-            @ (addx i2 p2)
-            @ (addx i1
-                 [PPtrUpperBound (destType, PlusPI, destArg, tlen);
-		  PInitializedRange (destArg, len)])
-         |  _  ->
-             (addx i1 p1)
-             @ (addx i2 p2)
-             @ (addx i1
-                  [PPtrUpperBound (destType, PlusPI, destArg, len);
-		   PInitializedRange (destArg, len)])
-       end
+       (* Initialized-range lengths are bytes unless explicitly IndexSize.
+          Dividing by the target size truncates nonmultiple intervals and can
+          accept a five-byte read from a four-byte object. Preserve the exact
+          byte count, including when the pointee size is symbolic. *)
+       let destType = TInt (IUChar, []) in
+       (addx i1 p1)
+       @ (addx i2 p2)
+       @ (addx i1
+            [PPtrUpperBound (destType, PlusPI, destArg, len);
+             PInitializedRange (destArg, len)])
 
     | XAllocationBase s ->
        let (p, a, i) = geta s in (addx i (p @ [PAllocationBase a]))

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<c-analysis><cfile name="wdt_bytes"><functions>
+<function name="require_bytes"><parameters><par name="p" nr="1"/></parameters><preconditions><pre><math><apply><initialized-range/><ci>p</ci><apply><byte-size/><cn>5</cn></apply></apply></math></pre></preconditions></function>
+<function name="require_raw_bytes"><parameters><par name="p" nr="1"/></parameters><preconditions><pre><math><apply><initialized-range/><ci>p</ci><cn>5</cn></apply></math></pre></preconditions></function>
+<function name="require_indices"><parameters><par name="p" nr="1"/></parameters><preconditions><pre><math><apply><initialized-range/><ci>p</ci><apply><index-size/><cn>2</cn></apply></apply></math></pre></preconditions></function>
+<function name="readonly_call"><parameters/><sideeffects><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects></function>
+<function name="acquire"><parameters><par name="out" nr="1"/></parameters><preconditions><pre><math><apply><buffer/><ci>out</ci><cn>8</cn></apply></math></pre></preconditions><postconditions><post><math><apply><initialized/><apply><addressed-value/><ci>out</ci></apply></apply></math></post></postconditions></function>
+</functions></cfile></c-analysis>
