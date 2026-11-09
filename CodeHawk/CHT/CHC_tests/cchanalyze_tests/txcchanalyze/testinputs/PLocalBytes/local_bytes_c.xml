@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<c-analysis><cfile name="local_bytes"><functions>
+<function name="readonly_call"><parameters/><sideeffects><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects></function>
+<function name="write_slot"><parameters><par name="slot" nr="1"/></parameters><sideeffects><sideeffect><math><apply><block-write/><ci>slot</ci><cn>4</cn></apply></math></sideeffect><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects></function>
+<function name="post_only"><parameters><par name="slot" nr="1"/></parameters><postconditions><post><math><apply><initialized/><apply><addressed-value/><ci>slot</ci></apply></apply></math></post></postconditions></function>
+<function name="user_clear"><parameters><par name="slot" nr="1"/><par name="n" nr="2"/></parameters><postconditions><post><math><apply><initialized-range/><ci>slot</ci><ci>n</ci></apply></math></post></postconditions></function>
+</functions></cfile></c-analysis>

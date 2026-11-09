@@ -280,7 +280,9 @@ object (self)
       | Some (fname,fvid) -> atts @ ["fptr"; fname; string_of_int fvid]
       | _ -> atts in
     let sym = new symbol_t ~atts ("assignedAt#" ^ (string_of_int loc.line)) in
-    [make_c_cmd (ASSIGN_SYM (chifVar, SYM sym))] @ errno_write
+    let ranges = CCHMemoryInitialization.byte_ranges_written env lhs in
+    [make_c_cmd (ABSTRACT_VARS ranges);
+     make_c_cmd (ASSIGN_SYM (chifVar, SYM sym))] @ errno_write
 
 end
 

@@ -38,7 +38,7 @@ let () =
   List.iter (fun name -> List.iter (fun po ->
       if not po#is_safe || po#is_violation then
         failwith (CU.located_po_to_string po)) (reads name))
-    ["scalar_good"; "union_good"; "field_good"; "last_good"; "readonly_good"];
+    ["scalar_good"; "union_good"; "field_good"; "last_good"; "readonly_good"; "cleared_unknown"];
   List.iter (fun po -> match po#get_dependencies with
       | Some (DEnvC (_, assumptions)) when assumptions <> [] -> ()
       | _ -> failwith "readonly frame dependency missing") (reads "readonly_good");
@@ -46,7 +46,7 @@ let () =
       if po#is_safe then failwith (name ^ ": region bytes/lifetime invented"))
       (reads name))
     ["partial_bad"; "sibling_bad"; "overwritten_bad"; "opaque_bad";
-     "entry_unknown"; "loop_unknown"; "cleared_unknown";
+     "entry_unknown"; "loop_unknown";
      "allocated_unknown"; "acquired_unknown"; "failed_acquire_bad";
      "released_bad"];
   List.iter (fun name ->

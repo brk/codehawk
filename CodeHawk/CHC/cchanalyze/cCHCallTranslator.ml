@@ -1433,7 +1433,30 @@ object (self)
                     new symbol_t ~atts ("assignedAt#" ^ (string_of_int loc.line)) in
                   Some rvar, [make_c_cmd (ASSIGN_SYM (rvar, SYM sym))] in
        let sideeffect = self#get_sideeffect fname fvid args fnargs rvar in
-       Ok (callop :: (sideeffect @ postconditions @ rcode))
+       let effects = get_sideeffects env#get_functionname (Some fname) context in
+       let ranges =
+         if not (has_complete_write_footprint fname)
+            || not (List.exists (fun (p, _) -> p = XPreservesAllMemory) effects) then
+           CCHMemoryInitialization.local_byte_range_variables env
+         else List.concat_map (fun (effect, _) -> match effect with
+           | XPreservesAllMemory | XConstTerm _ -> []
+           | XBlockWrite (ArgValue (ParFormal n, ArgNoOffset), _)
+           | XInitializedRange (ArgValue (ParFormal n, ArgNoOffset), _)
+                when n > 0 && n <= List.length args ->
+              CCHMemoryInitialization.byte_ranges_written_at env (List.nth args (n-1))
+           | _ -> CCHMemoryInitialization.local_byte_range_variables env) effects in
+       let ranges = ranges @ (match lhs with
+           | Some lv -> CCHMemoryInitialization.byte_ranges_written env lv | _ -> []) in
+       let clear = make_c_cmd (ABSTRACT_VARS ranges) in
+       let initialized =
+         if fname = "memset"
+            && (match get_function_summary fname with Some _ -> true | _ -> false)
+            && proof_scaffolding#has_direct_callsite env#get_functionname context
+            && (proof_scaffolding#get_direct_callsite env#get_functionname context)
+                 #get_header = "lib:string" then
+           CCHMemoryInitialization.memset_local_byte_range env args
+         else [] in
+       Ok (callop :: clear :: (sideeffect @ postconditions @ initialized @ rcode))
 
     | _ ->                                             (* indirect call *)
        let callop =
@@ -1453,7 +1476,8 @@ object (self)
             [make_c_cmd (ASSIGN_SYM (rvar, SYM sym))] in
        (* An unknown target can overwrite escaped storage, including array
           elements whose initialization facts are separate from the base. *)
-       let havoc = make_c_cmd (ABSTRACT_VARS env#get_memory_variables) in
+       let havoc = make_c_cmd (ABSTRACT_VARS
+           (env#get_memory_variables @ CCHMemoryInitialization.local_byte_range_variables env)) in
        Ok (callop :: havoc :: (self#havoc_errno_write @ rcode))
 
   method private get_postconditions

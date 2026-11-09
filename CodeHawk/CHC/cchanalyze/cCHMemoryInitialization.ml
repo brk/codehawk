@@ -135,6 +135,172 @@ let rec relative_bytes poq typ off =
           | _ -> None)
       | _ -> None)
 
+(* One exact memset interval per local object. These are separate from value
+   initialization markers: a write to any subobject invalidates the interval.
+   Do not seed facts in functions whose lowered AST does not retain enough
+   block-lifetime/control-flow information (loops/gotos/VLAs/assembly). *)
+let local_range_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
+
+let local_byte_range_variable (env: c_environment_int) vi =
+  env#mk_augmentation_variable "$initialized-bytes$" "local-byte-range"
+    vi.vid CHLanguage.SYM_VAR_TYPE
+
+let local_byte_range_variables (env: c_environment_int) =
+  List.map (local_byte_range_variable env) env#get_fdecls#get_locals
+
+let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
+  let rec block b = List.for_all stmt b.bstmts
+  and stmt s = match s.skind with
+    | Instr ins -> List.for_all (function Set _ | Call _ -> true | _ -> false) ins
+    | Return _ -> true
+    | If (_, a, b, _) -> block a && block b
+    | Block b -> block b
+    | _ -> false in
+  Hashtbl.replace local_range_enabled env#get_functionname (block f.sbody)
+
+let rec local_address_root = function
+  | CastE (typ, e) when is_pointer_type typ -> local_address_root e
+  | AddrOf (Var (_, vid), _) | StartOf (Var (_, vid), _) -> Some vid
+  | BinOp ((PlusPI | MinusPI | IndexPI), e, _, _) -> local_address_root e
+  | _ -> None
+
+let byte_ranges_written (env: c_environment_int) = function
+  | Var (_, vid), _ ->
+     (match List.find_opt (fun vi -> vi.vid = vid) env#get_fdecls#get_locals with
+      | Some vi -> [local_byte_range_variable env vi]
+      | _ -> [])
+  | Mem e, _ ->
+     (match local_address_root e with
+      | Some vid ->
+         (match List.find_opt (fun vi -> vi.vid = vid) env#get_fdecls#get_locals with
+          | Some vi -> [local_byte_range_variable env vi]
+          | _ -> [])
+      | _ -> local_byte_range_variables env)
+
+let byte_ranges_written_at env address = byte_ranges_written env (Mem address, NoOffset)
+
+let rec range_type_volatile seen typ =
+  let typ = fenv#get_type_unrolled typ in
+  is_volatile_type typ || match typ with
+    | TArray (elem, _, _) -> range_type_volatile seen elem
+    | TComp (key, _) when not (List.mem key seen) ->
+       List.exists (fun f -> range_type_volatile (key :: seen) f.ftype)
+         (fenv#get_comp key).cfields
+    | _ -> false
+
+let memset_local_byte_range (env: c_environment_int) args =
+  let query = object method fenv = env#get_fdecls end in
+  let rec address = function
+    | CastE (typ, e) when is_pointer_type typ -> address e
+    | BinOp (PlusPI, e, index, _) ->
+       (match address e, literal_value query index,
+              get_pointer_expr_target_type env#get_fdecls e with
+        | Some (lv, first), Some (XConst (IntConst i)), Ok typ
+             when i#geq numerical_zero ->
+           (match constant (size_of_type env#get_fdecls typ) with
+            | Some n when n#gt numerical_zero -> Some (lv, first#add (i#mult n))
+            | _ -> None)
+        | _ -> None)
+    | e -> Option.map (fun lv -> lv, numerical_zero) (addressed_local e) in
+  if Hashtbl.find_opt local_range_enabled env#get_functionname <> Some true then [] else
+  match args with
+  | [dest; _; len] ->
+     (match address dest, literal_value query len with
+      | Some (((Var (_, vid), off) as lv), first), Some (XConst (IntConst n)) ->
+         (match List.find_opt (fun vi -> vi.vid = vid && not vi.vglob)
+                  env#get_fdecls#get_locals, type_of_lval env#get_fdecls lv with
+          | Some vi, Ok typ when not (range_type_volatile [] vi.vtype)
+                                 && first#geq numerical_zero && n#geq numerical_zero ->
+             (match constant (size_of_type env#get_fdecls typ) with
+              | Some size when (first#add n)#leq size ->
+                 let marker = new CHLanguage.symbol_t
+                     ~atts:[string_of_int (CCHDictionary.cdictionary#index_offset off);
+                            first#toString; n#toString] "memset-initialized-bytes" in
+                 [CCHCommand.make_c_cmd (CHLanguage.ASSIGN_SYM
+                    (local_byte_range_variable env vi, CHLanguage.SYM marker))]
+              | _ -> [])
+          | _ -> [])
+      | _ -> [])
+  | _ -> []
+
+(* A full clear covers nested subobjects without guessing structure layout.
+   Partial intervals use only offsets whose byte position is already known
+   (constant array indices/union members). Padding and bitfields are never
+   inferred from ordinary field assignments. *)
+let rec contained_subobject poq typ off = match off with
+  | NoOffset -> Some typ
+  | Field ((name, key), rest) ->
+     (match fenv#get_type_unrolled typ with
+      | TComp (k, _) when k = key ->
+         (match List.find_opt (fun f -> f.fname = name && f.fbitfield = None)
+                  (fenv#get_comp k).cfields with
+          | Some field -> contained_subobject poq field.ftype rest
+          | _ -> None)
+      | _ -> None)
+  | Index (e, rest) ->
+     (match fenv#get_type_unrolled typ, literal_value poq e with
+      | TArray (elem, _, _), Some (XConst (IntConst i)) ->
+         (match sizeof poq typ, sizeof poq elem with
+          | Some sz, Some esz when i#geq numerical_zero && esz#gt numerical_zero
+                                  && ((i#add numerical_one)#mult esz)#leq sz ->
+             contained_subobject poq elem rest
+          | _ -> None)
+      | _ -> None)
+
+let prove_cleared_local_bytes (poq: po_query_int) ctxt (lv: lval) start count =
+  match lv with
+  | Var (_, vid), off ->
+     (match poq#env#get_varinfo vid with
+      | Ok vi when not vi.vglob && not (range_type_volatile [] vi.vtype) ->
+         let variable = local_byte_range_variable poq#env vi in
+         let covers sym =
+           match sym#getBaseName, sym#getAttributes with
+           | "memset-initialized-bytes", [offset; first; length] ->
+              (try
+                 let baseoff = CCHDictionary.cdictionary#get_offset (int_of_string offset) in
+                 let first = mkNumericalFromString first in
+                 let length = mkNumericalFromString length in
+                 match contained_subobject poq vi.vtype baseoff,
+                       offset_suffix baseoff off with
+                 | Some basetyp, Some tail ->
+                    (match contained_subobject poq basetyp tail, sizeof poq basetyp with
+                     | Some typ, Some total ->
+                        (match sizeof poq typ with
+                         | Some width when start#geq numerical_zero
+                             && count#geq numerical_zero && (start#add count)#leq width ->
+                            if first#equal numerical_zero && length#equal total then true
+                            else (match relative_bytes poq basetyp tail with
+                              | Some position ->
+                                 let position = position#add start in
+                                 position#geq first && (position#add count)#leq (first#add length)
+                              | _ -> false)
+                         | _ -> false)
+                     | _ -> false)
+                 | _ -> false
+               with Failure _ | Invalid_argument _ -> false)
+           | _ -> false in
+         let inv = List.find_opt (fun inv -> match inv#get_fact with
+             | NonRelationalFact (v, FInitializedSet syms) ->
+                v#equal variable && syms <> [] && List.for_all covers syms
+             | _ -> false) (poq#get_context_invariants ctxt) in
+         (match inv with
+          | Some inv ->
+             (* Overapproximate frame dependencies by retaining every explicit
+                effects contract used anywhere in this function. Even an unused
+                frame makes this conditional; no model is silently trusted. *)
+             let contracts = CCHFileContract.file_contract in
+             let frames = List.concat_map (fun call ->
+                 let callee = call#get_callee in
+                 if contracts#has_function_contract callee.vname then
+                   List.map (fun p -> PostAssumption (callee.vid, p))
+                     (contracts#get_function_contract callee.vname)#get_sideeffects
+                 else []) (proof_scaffolding#get_direct_callsites poq#fname) in
+             Some (if frames = [] then DLocal [inv#index]
+                   else DEnvC ([inv#index], frames))
+          | _ -> None)
+      | _ -> None)
+  | _ -> None
+
 let assigned (inv: invariant_int) =
   match inv#get_fact with
   | NonRelationalFact (_, FInitializedSet syms) ->
@@ -199,7 +365,9 @@ let initialized_local_bytes ?(start=numerical_zero) (poq: po_query_int) ctxt (lv
              | _ -> None in
          (match local_type poq lv with
           | Some typ when count#geq numerical_zero ->
-             let result = prove typ offset start count in
+             let result = match prove typ offset start count with
+               | Some _ as result -> result
+               | _ -> prove_cleared_local_bytes poq ctxt lv start count in
              let _ = poq#set_key_diagnostic "copy-source-size"
                  (vi.vname ^ ": byte offset " ^ start#toString
                   ^ "; requested bytes " ^ count#toString ^ "; type size: " ^

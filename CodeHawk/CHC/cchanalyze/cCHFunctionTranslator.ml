@@ -362,6 +362,7 @@ class symbolicsets_function_translator_t
 object
 
   method translate (f:fundec) =
+    let _ = CCHMemoryInitialization.register_local_byte_ranges env f in
     let context = mk_program_context () in
     let _ = env#register_program_locals f.sdecls#get_locals SYM_VAR_TYPE in
     let _ = env#register_function_return f.svar.vtype SYM_VAR_TYPE in
