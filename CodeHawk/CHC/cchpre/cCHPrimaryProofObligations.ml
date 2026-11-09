@@ -1424,11 +1424,16 @@ args
        let (p1,destArg,i1) = geta dest in
        let (p2,len,i2) = geta len in
        let destType = get_tgttyp destArg in
+       let byteLen = match size_of_type env destType with
+         | XConst (IntConst n) when n#equal numerical_one -> len
+         | _ -> BinOp (Mult, len, SizeOf destType, TInt (IULong, [])) in
        (addx i1 p1)
        @ (addx i2 p2)
        @ (addx i1
             [PPtrUpperBound (destType, PlusPI, destArg, len);
-	     PInitializedRange (destArg, len)])
+             (* The range checker consumes bytes. The bounds predicate above
+                still uses the original typed element count. *)
+             PInitializedRange (destArg, byteLen)])
 
     | XInitializedRange (dest, ByteSize len)
       | XInitializedRange (dest, len) ->

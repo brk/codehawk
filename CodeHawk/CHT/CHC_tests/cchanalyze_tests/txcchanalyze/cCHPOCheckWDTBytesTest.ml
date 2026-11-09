@@ -49,5 +49,12 @@ let () =
      "entry_unknown"; "loop_unknown"; "cleared_unknown";
      "allocated_unknown"; "acquired_unknown"; "failed_acquire_bad";
      "released_bad"];
+  List.iter (fun name ->
+      let ranges = List.filter (fun po -> match po#get_predicate with
+          | PInitializedRange _ -> true | _ -> false) (obligations name) in
+      if ranges = [] || List.exists (fun po -> po#is_safe) ranges then
+        failwith (name ^ ": incomplete interval became initialized"))
+    ["indices_partial_bad"; "cleared_partial_bad"; "cleared_opaque_bad";
+     "excessive_initialized_bad"];
   CU.analysis_take_down "wdt_bytes";
   print_endline "WDT byte controls: exact byte/index bounds and conservative regions passed"

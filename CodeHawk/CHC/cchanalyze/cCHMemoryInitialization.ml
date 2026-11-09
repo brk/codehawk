@@ -53,6 +53,14 @@ let rec literal_value poq = function
      (match type_of_exp poq#fenv e with
       | Ok typ -> Some (size_of_type poq#fenv typ)
       | _ -> None)
+  | BinOp (Mult, left, right, typ) ->
+     (match literal_value poq left, literal_value poq right with
+      | Some (XConst (IntConst a)), Some (XConst (IntConst b)) ->
+         let n = a#mult b in
+         let range = range_of_type poq#fenv typ in
+         if n#geq range#min && n#leq range#max then
+           Some (XConst (IntConst n)) else None
+      | _ -> None)
   | CastE (typ, e) ->
      (match fenv#get_type_unrolled typ, literal_value poq e with
       | TInt (ik, _), Some (XConst (IntConst n)) when ik <> IBool ->

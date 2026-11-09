@@ -261,88 +261,30 @@ object (self)
            match (vinfo.vtype, offset) with
            | (TArray (_,Some (Const (CInt (len64,_,_))),_),NoOffset) ->
               let arraylen = mkNumericalFromInt64 len64 in
-              begin
-                match self#get_initialization_length vinfo with
-                | Some (deps, irname, irlen) when irlen#geq arraylen ->
-                   let deps = join_dependencies deps1 deps in
-                   let msg =
-                     Printf.sprintf
-                       "initialized by %s with %s bytes" irname irlen#toString in
-                   Some (deps, msg)
-                | Some (deps, irname, irlen)
-                     when irlen#geq (arraylen#sub numerical_one) ->
-                   let (edeps, elementinits) =
-                     self#get_element_initializations vinfo in
-                   if List.exists (fun (n, _x) ->
-                          n#equal (arraylen#sub numerical_one)) elementinits then
-                     let (n, x) =
-                       List.find (fun (n, _x) ->
-                           n#equal (arraylen#sub numerical_one)) elementinits in
-                     let deps = join_dependencies deps edeps in
-                     let msg =
-                       Printf.sprintf
-                         ("initialized by %s with %s bytes; element %s "
-                          ^^ "was separately initialized with %s")
-                         irname
-                         irlen#toString
-                         n#toString
-                         (x2s x) in
-                     Some (deps, msg)
-                   else
-                     let argmsg =
-                       Printf.sprintf
-                         ("stack array with length %s; initialization by %s "
-                          ^^ "with length: %s; no initialization found for the "
-                          ^^ "last element")
-                         arraylen#toString
-                         irname
-                         irlen#toString in
-                     begin
-                       poq#set_diagnostic_arg 1 argmsg;
-                       None
-                     end
-
-                | Some (_, irname, irlen) ->
-                   let argmsg =
-                     Printf.sprintf
-                       ("stack array with length %s; initialization by %s "
-                        ^^ "with length %s")
-                       arraylen#toString
-                       irname
-                       irlen#toString in
-                   begin
-                     poq#set_diagnostic_arg 1 argmsg;
-                     None
-                   end
-                | _ ->
-                   let (deps,elementinits) =
-                     self#get_element_initializations vinfo in
-                   match self#check_elementinits elementinits arraylen with
-                   | Some s ->
-                      let msg =
-                        Printf.sprintf
-                          ("stack array with length %s has been fully initialized "
-                           ^^ " with values: %s")
-                          arraylen#toString
-                          s in
-                      Some (deps, msg)
-                   | _ ->
-                      let p =
-                        String.concat
-                          ", "
-                          (List.map (fun (n,x)  ->
-                               "(" ^ n#toString ^ ": " ^ (x2s x) ^ ")")
-                             elementinits) in
-                      let argmsg =
-                        Printf.sprintf
-                          "stack array with length %s and known element values: %s"
-                          arraylen#toString
-                          p in
-                      begin
-                        poq#set_diagnostic_arg 1 argmsg;
-                        None
-                      end
-              end
+              (* The old fallback compared a byte initialization marker with
+                 the number of array elements, ignored the requested interval,
+                 and could accept two initialized bytes as five bytes in a
+                 uint32_t[2]. It also lacked subobject/frame provenance. Keep
+                 only fully enumerated byte-array values here. General typed
+                 byte intervals are handled by MemoryInitialization above. *)
+              let elem = match vinfo.vtype with TArray (t, _, _) -> t | _ -> TVoid [] in
+              let byte_element = match size_of_type poq#env#get_fdecls elem with
+                | XConst (IntConst n) -> n#equal numerical_one | _ -> false in
+              let bounded_request =
+                match CCHMemoryInitialization.literal_value poq e2 with
+                | Some (XConst (IntConst n)) ->
+                   n#geq numerical_zero && n#leq arraylen
+                | _ -> (match e2 with
+                    | CnApp ("ntp", [Some base], _) ->
+                       cd#index_exp e1 = cd#index_exp base
+                    | _ -> false) in
+              if byte_element && bounded_request then
+                let (deps, elementinits) = self#get_element_initializations vinfo in
+                (match self#check_elementinits elementinits arraylen with
+                 | Some text -> Some (join_dependencies deps1 deps,
+                     "byte array fully initialized with values: " ^ text)
+                 | _ -> None)
+              else None
            | _ ->
               begin
                 poq#set_diagnostic_arg

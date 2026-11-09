@@ -36,3 +36,7 @@ float allocated_unknown(void) { Entry *e=malloc(176*sizeof(*e)); float value=0; 
 float acquired_unknown(void) { void *p; float value=0; if(acquire(&p)==0) memcpy(&value,&((Entry*)p)[175].value,4); return value; }
 float failed_acquire_bad(void) { void *p; float value; acquire(&p); memcpy(&value,p,4); return value; }
 float released_bad(void) { void *p; float value=0; if(acquire(&p)==0) { release(p); memcpy(&value,p,4); } return value; }
+void indices_partial_bad(void) { uint32_t a[2]; a[0]=1; require_indices(a); }
+void cleared_partial_bad(void) { uint32_t a[2]; memset(a,0,2); require_bytes(a); }
+void cleared_opaque_bad(void) { uint32_t a[2]; memset(a,0,8); opaque(); require_bytes(a); }
+void excessive_initialized_bad(void) { uint8_t a[2]={1,2}; require_bytes((void*)a); }
