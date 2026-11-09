@@ -7,6 +7,7 @@
         cCHPOCheckContractEffectsTest
         cCHPOCheckByteCopyContractTest
         cCHPOCheckMapSpanContractTest
+        cCHPOCheckTableAcquisitionTest
         )
   (deps
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz
@@ -31,5 +32,7 @@
         testinputs/PLCByteCopy/lc_copy_model_c.xml
         testinputs/PLCMapSpans/lc_map_spans.cch.tar.gz
         testinputs/PLCMapSpans/lc_map_spans_c.xml
+        testinputs/PTableAcquisition/table_acquisition.cch.tar.gz
+        testinputs/PTableAcquisition/table_acquisition_c.xml
         )
   (libraries chlib chutil cchlib cchpre cchanalyze tchlib tcchanalyze))

@@ -1343,7 +1343,7 @@ object (self)
         not memreg#is_null) syms
 
   method private get_exp_buffer_index_size
-                   (e:exp):(string * xpr_t * xpr_t) option =
+                   (e:exp):(string * typ * xpr_t * xpr_t) option =
     (* return index size and offset (in terms of elements) *)
     try
       match e with
@@ -1354,15 +1354,15 @@ object (self)
          begin
            TR.tfold
              ~ok:(fun vinfo ->
-               match vinfo.vtype with
-               | TArray (_,Some len, _) ->
+               match CCHFileEnvironment.file_environment#get_type_unrolled vinfo.vtype with
+               | TArray (elem,Some len, _) ->
                   begin
                     match offset with
                     | NoOffset ->
-                       Some (vname,self#e2x len,zero_constant_expr)
+                       Some (vname,elem,self#e2x len,zero_constant_expr)
                     | Index (Const (CInt (i64, _, _)), NoOffset) ->
                        let xoffset = num_constant_expr (mkNumericalFromInt64 i64) in
-                       Some (vname, self#e2x len, xoffset)
+                       Some (vname, elem, self#e2x len, xoffset)
                     | _ -> None
                   end
                | _ -> None)
@@ -1568,12 +1568,15 @@ object (self)
    * a lower bound on the buffer size and an upper bound on the offset *)
   method get_buffer_offset_size
            (arg:int)
-           (typ:typ)
+           (_typ:typ)
            (e:exp):(string * xpr_t * xpr_t * dependencies_t) option =
     let invs = self#get_invariants arg in
     match self#get_exp_buffer_index_size e with
-    | Some (name,indexsize,indexoffset) ->
-       let typesize = size_of_type fenv typ in
+    | Some (name,elem,indexsize,indexoffset) ->
+       (* The object's extent/offset use its declared element type. The
+          pointer operation's element type is used separately by the checker
+          for its increment; casts must not rescale the backing object. *)
+       let typesize = size_of_type fenv elem in
        let bytesize = simplify_xpr (XOp (XMult, [indexsize; typesize])) in
        let byteoffset = simplify_xpr (XOp (XMult, [indexoffset; typesize])) in
        let deps = DLocal [] in

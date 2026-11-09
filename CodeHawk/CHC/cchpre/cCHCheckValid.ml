@@ -1635,16 +1635,17 @@ let check_ppo_validity
   | PPtrUpperBoundDeref (_, IndexPI, _, e) when is_zero e ->
      make "add zero"
 
-  | PPtrUpperBound (_, PlusPI, StartOf (Var (vname, vid),NoOffset), (Const _ as e))
+  | PPtrUpperBound (t, PlusPI, StartOf (Var (vname, vid),NoOffset), (Const _ as e))
     | PPtrUpperBound
-        (_, PlusPI, CastE(_, StartOf (Var (vname, vid), NoOffset)), (Const _ as e))
+        (t, PlusPI, CastE(_, StartOf (Var (vname, vid), NoOffset)), (Const _ as e))
     | PPtrUpperBound
-        (_, PlusPI,CastE(_,StartOf (Var (vname, vid),NoOffset)),
+        (t, PlusPI,CastE(_,StartOf (Var (vname, vid),NoOffset)),
 	 CastE (_, (Const _ as e))) when vid > 0 ->
      TR.tfold
        ~ok:(fun vinfo ->
          match (get_num_value env e, vinfo.vtype) with
-         | (Some v, TArray (_, Some (Const _ as clen), _)) when
+         | (Some v, TArray (elem, Some (Const _ as clen), _)) when
+	        typ_compare (fenv#get_type_unrolled t) (fenv#get_type_unrolled elem) = 0 &&
 	        (match get_num_value env clen with
                  | Some _len -> true
                  | _ -> false) ->
@@ -1826,14 +1827,15 @@ let check_ppo_validity
        when vname1 = vname2 ->
      make ("null-termination within bounds is checked separately")
 
-  | PPtrUpperBoundDeref (_,
+  | PPtrUpperBoundDeref (t,
                          PlusPI,
                          StartOf (Var (vname, vid), NoOffset), (Const _ as e))
        when vid > 0 ->
      TR.tfold
        ~ok:(fun vinfo ->
          match (get_num_value env e, vinfo.vtype) with
-         | (Some v, TArray (_, Some (Const _ as clen), _)) when
+         | (Some v, TArray (elem, Some (Const _ as clen), _)) when
+	        typ_compare (fenv#get_type_unrolled t) (fenv#get_type_unrolled elem) = 0 &&
 	        (match get_num_value env clen with
                  | Some _ -> true | _ -> false) ->
 	    let len = Option.get (get_num_value env clen) in

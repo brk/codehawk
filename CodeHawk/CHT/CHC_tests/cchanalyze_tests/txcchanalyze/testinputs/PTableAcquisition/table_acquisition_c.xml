@@ -1,0 +1,91 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="table_acquisition">
+    <functions>
+      <function name="CFE_TBL_GetAddress">
+        <parameters>
+          <par name="out" nr="1" />
+          <par name="handle" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="byte_span">
+        <parameters>
+          <par name="ptr" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>ptr</ci>
+                <apply>
+                  <byte-size />
+                  <cn>5</cn>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="index_span">
+        <parameters>
+          <par name="ptr" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>ptr</ci>
+                <apply>
+                  <index-size />
+                  <cn>2</cn>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

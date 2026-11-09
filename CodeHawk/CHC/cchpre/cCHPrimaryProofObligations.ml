@@ -1390,7 +1390,10 @@ args
     | XBuffer (dest, len) ->
        let (p1,destArg,i1) = geta dest in
        let (p2,len,i2) = geta len in
-       let destType = get_tgttyp destArg in
+       (* Buffer lengths are bytes unless explicitly wrapped in IndexSize.
+          Reusing the pointee type scales the byte count a second time: an
+          eight-byte void** output slot would incorrectly require 64 bytes. *)
+       let destType = TInt (IUChar, []) in
        (addx i1 p1)
        @ (addx i2 p2)
        @ (addx i1 [PPtrUpperBound (destType, PlusPI, destArg, len)])
