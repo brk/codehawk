@@ -1,0 +1,487 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="guarded_outputs">
+    <functions>
+      <function name="acquire">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="ge" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="acquire_zero">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="eq" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="acquire_negative">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="lt" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="acquire_positive">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="gt" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="acquire_nonpositive">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="le" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="acquire_nonzero">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="ne" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="acquire_19">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="eq" value="19" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="acquire_framed">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="ge" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+          <sideeffect>
+            <math>
+              <apply>
+                <block-write />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="acquire_descriptor">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <not-null />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <valid-mem />
+                <ci>out</ci>
+              </apply>
+            </math>
+          </pre>
+          <pre>
+            <math>
+              <apply>
+                <buffer />
+                <ci>out</ci>
+                <cn>8</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="ge" value="0" />
+                <apply>
+                  <addressed-value>
+                    <field name="p" />
+                  </addressed-value>
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="readonly_call">
+        <parameters />
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="status_only">
+        <parameters />
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <geq />
+                <return />
+                <cn>0</cn>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="acquire_narrow">
+        <parameters>
+          <par name="out" nr="1" />
+        </parameters>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="ge" value="0" />
+                <apply>
+                  <addressed-value>
+                    <field name="half" />
+                  </addressed-value>
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

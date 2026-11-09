@@ -434,6 +434,7 @@ object
     | XGlobalAddress _ -> "ga"
     | XHeapAddress _ -> "ha"
     | XInitialized _ -> "i"
+    | XInitializedOnReturn _ -> "ior"
     | XInitializedRange _ -> "ir"
     | XInitializesExternalState _ -> "ies"
     | XInputFormatString _ -> "ifs"

@@ -502,6 +502,10 @@ type xpredicate_t =
   | XInitialized of s_term_t
   (** lval denoted is initialized *)
 
+  | XInitializedOnReturn of binop * numerical_t * s_term_t
+  (** [return op constant] implies initialization of the denoted lval.
+      This grants no initialization or preservation on other returns. *)
+
   | XInitializedRange of s_term_t * s_term_t
   (** term pointed to is initialized for t2 length *)
 

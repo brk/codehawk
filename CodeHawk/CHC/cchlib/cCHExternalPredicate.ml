@@ -198,6 +198,7 @@ let xpredicate_tag p =
   | XGlobalAddress _ -> "global-address"
   | XHeapAddress _ -> "heap-address"
   | XInitialized _ -> "initialized"
+  | XInitializedOnReturn _ -> "initialized-on-return"
   | XInitializedRange _ -> "initialized-range"
   | XInitializesExternalState _ -> "initializes-external-state"
   | XInvalidated _ -> "invalidated"
@@ -288,6 +289,8 @@ object (self)
     | XFreed t -> wt 1 t
     | XFunctional ->  ()
     | XInitialized t -> wt 1  t
+    | XInitializedOnReturn (_, n, t) ->
+       wt 1 ReturnValue; wt 2 (NumConstant n); wt 3 t
     | XInitializedRange (t1, t2) -> begin wt 1 t1; wt 2 t2 end
     | XInitializesExternalState (t1, t2) -> begin wt 1 t1; wt 2 t2 end
     | XInputFormatString t -> wt 1 t
@@ -444,6 +447,9 @@ let xpredicate_to_pretty p =
   | XGlobalAddress t -> namet "global-address" t
   | XHeapAddress t -> namet "heap-address" t
   | XInitialized t -> namet "initialized" t
+  | XInitializedOnReturn (op, n, t) ->
+     LBLOCK [STR "initialized-on-return("; STR (binop_mfts#ts op);
+             STR ","; n#toPretty; STR ","; sp t; STR ")"]
   | XInitializedRange (ptr,len) ->
      LBLOCK [
          STR "initialized-range(";
@@ -607,6 +613,7 @@ let get_xpredicate_terms (pred:xpredicate_t) =
     | XRelationalExpr (_, t1, t2)
     | XRevBuffer (t1, t2) ->  [t1; t2]
   | XPreservesAllMemoryX l ->  l
+  | XInitializedOnReturn (_, n, t) -> [ReturnValue; NumConstant n; t]
   | XTainted (t,optlb,optub) ->
      match (optlb,optub) with
      | (Some t1, Some t2) -> [t; t1; t2]
@@ -747,6 +754,8 @@ let xpredicate_to_dfs_string (p:xpredicate_t) =
     | XBuffer (t1, t2)
     | XRevBuffer (t1, t2) -> tag ^ "," ^ (tdfs t1) ^ "," ^ (tdfs t2)
   | XPreservesAllMemoryX l -> String.concat "," (tag::(List.map tdfs l))
+  | XInitializedOnReturn (op, n, t) ->
+     String.concat "," [tag; optag op; n#toString; tdfs t]
   | XRelationalExpr (op,t1,t2) ->
      String.concat "," [tag; (optag op); (tdfs t1); (tdfs t2)]
   | XTainted (t,optlb,optub) ->
@@ -996,6 +1005,12 @@ let read_xml_xpredicate
               else
                 [XInitialized t ]
            | "initialized" -> [XInitialized t]
+           | "initialized-on-return" ->
+              let op = binop_mfts#fs (get "op") in
+              (match op with
+               | Eq | Ne | Lt | Le | Gt | Ge ->
+                  [XInitializedOnReturn (op, mkNumericalFromString (get "value"), t)]
+               | _ -> raise_error n (STR "Unsupported initialized-on-return comparison"))
            | "invalidates" -> [XInvalidated t]
            | "not-null" -> [XNotNull t]
            | "not-zero" -> [XNotZero t]
@@ -1251,6 +1266,12 @@ let write_xmlx_xpredicate
     | XFreed _t -> apply_term "frees" []
     | XFunctional -> apply_term "functional" []
     | XInitialized t -> apply_term "initialized" [t]
+    | XInitializedOnReturn (op, n, t) ->
+       let a = apply_term "initialized-on-return" [t] in
+       let child = a#getTaggedChild "initialized-on-return" in
+       child#setAttribute "op" (binop_mfts#ts op);
+       child#setAttribute "value" n#toString;
+       a
     | XInitializedRange  (t1,t2) -> apply_term "initialized-range" [t1; t2]
     | XInputFormatString t ->
        let anode = apply_term "format-string"  [t] in

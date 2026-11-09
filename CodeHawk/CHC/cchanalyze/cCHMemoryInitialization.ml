@@ -143,6 +143,7 @@ let rec relative_bytes poq typ off =
    block-lifetime/control-flow information (loops/gotos/VLAs/assembly). *)
 let local_range_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
 let local_alias_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
+let guarded_outputs_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
 
 let local_byte_range_variable (env: c_environment_int) vi =
   env#mk_augmentation_variable "$initialized-bytes$" "local-byte-range"
@@ -215,7 +216,81 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
       | If (e, a, b, _) -> expression e && aliases a && aliases b
       | Block b -> aliases b
       | _ -> false) b.bstmts in
+  let query = object method fenv = f.sdecls end in
+  let conversion target source value =
+    let target = fenv#get_type_unrolled target and source = fenv#get_type_unrolled source in
+    match target, source with
+    | TInt (IBool, _), _ -> false
+    | TInt _, TInt _ ->
+       let dst = range_of_type f.sdecls target and src = range_of_type f.sdecls source in
+       (dst#min#leq src#min && dst#max#geq src#max)
+       || (match value with
+           | Some e -> (match literal_value query e with
+               | Some (XConst (IntConst n)) -> n#geq dst#min && n#leq dst#max
+               | _ -> false)
+           | _ -> false)
+    | TPtr _, TPtr _ -> true
+    | TPtr _, TInt _ -> (match value with Some e -> exp_is_zero e | _ -> false)
+    | _ -> typ_compare target source = 0 in
+  let rec casts e = match e with
+    | CastE (target, arg) ->
+       (match type_of_exp f.sdecls arg with
+        | Ok source -> conversion target source (Some arg) && casts arg
+        | _ -> false)
+    | Lval lv | AddrOf lv | StartOf lv -> clval lv
+    | BinOp (_, a, b, _) -> casts a && casts b
+    | UnOp (_, a, _) -> casts a
+    | Const _ | SizeOf _ | SizeOfE _ | AlignOf _ | AlignOfE _ -> true
+    | _ -> false
+  and clval (host, off) =
+    (match host with Var _ -> true | Mem e -> casts e) && coff off
+  and coff = function
+    | NoOffset -> true | Field (_, o) -> coff o | Index (e, o) -> casts e && coff o in
+  let status_slot = function
+    | Var (_, vid), off ->
+       let rec ordinary typ off =
+         if is_volatile_type (fenv#get_type_unrolled typ) then false else match off with
+         | NoOffset -> not (is_volatile_type (fenv#get_type_unrolled typ))
+         | Field ((name, key), rest) ->
+            (match fenv#get_type_unrolled typ with
+             | TComp (k, _) when k = key && (fenv#get_comp k).cstruct ->
+                (match List.find_opt (fun field -> field.fname = name && field.fbitfield = None)
+                         (fenv#get_comp k).cfields with
+                 | Some field -> ordinary field.ftype rest | _ -> false)
+             | _ -> false)
+         | _ -> false in
+       (match env#get_varinfo vid with
+        | Ok vi -> not vi.vglob && not vi.vaddrof && ordinary vi.vtype off
+        | _ -> false)
+    | _ -> false in
+  let assign lv source value = match type_of_lval f.sdecls lv with
+    | Ok target ->
+       (match fenv#get_type_unrolled target with TInt _ -> status_slot lv | _ -> true)
+       && conversion target source value
+    | _ -> false in
+  let rec guarded b = List.for_all (fun s -> match s.skind with
+      | Instr ins -> List.for_all (function
+          | Set (lv, e, _) ->
+             clval lv && casts e && (match type_of_exp f.sdecls e with
+                 | Ok source -> assign lv source (Some e) | _ -> false)
+          | Call (lhs, fn, args, _) ->
+             casts fn && List.for_all casts args && (match lhs with
+               | None -> true
+               | Some lv -> clval lv && (match type_of_exp f.sdecls fn with
+                   | Ok typ -> (match fenv#get_type_unrolled typ with
+                       | TFun (ret, _, _, _) -> assign lv ret None
+                       | TPtr (TFun (ret, _, _, _), _) -> assign lv ret None
+                       | _ -> false)
+                   | _ -> false))
+          | _ -> false) ins
+      | Return (e, _) -> (match e with Some e -> casts e | _ -> true)
+      | If (e, a, b, _) -> casts e && guarded a && guarded b
+      | Block b -> guarded b
+      | _ -> false) b.bstmts in
   Hashtbl.replace local_range_enabled env#get_functionname (block f.sbody);
+  Hashtbl.replace guarded_outputs_enabled env#get_functionname
+    (List.exists (function Attr ("codehawk_nested_scope_metadata_v1", []) -> true | _ -> false)
+       f.sbody.battrs && block f.sbody && aliases f.sbody && guarded f.sbody);
   Hashtbl.replace local_alias_enabled env#get_functionname
     (List.exists (function
          | Attr ("codehawk_nested_scope_metadata_v1", []) -> true
@@ -228,6 +303,40 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
 let function_scope_local vi =
   not vi.vglob && not (List.exists (function
       | Attr ("goblint_cil_nested", _) -> true | _ -> false) vi.vattr)
+
+let guarded_output_initialization_enabled env =
+  Hashtbl.find_opt guarded_outputs_enabled env#get_functionname = Some true
+
+let guarded_return_dependency (poq: po_query_int) ctxt callctxt callee op bound =
+  if not (guarded_output_initialization_enabled poq#env) then None else
+  if not (List.for_all (fun g -> g#get_value = None)
+      CCHFileContract.file_contract#get_globalvar_contracts) then None else
+  let facts = poq#get_context_invariants ctxt in
+  let same_return v =
+    poq#env#is_function_return_value v
+    && (poq#env#get_callvar_callee v).vid = callee
+    && (CCHContext.ccontexts#index_context (poq#env#get_callvar_context v)) = callctxt in
+  let satisfies low high =
+    let lower p = match low with Some n -> p n | _ -> false in
+    let upper p = match high with Some n -> p n | _ -> false in
+    match op with
+    | Ge -> lower (fun n -> n#geq bound)
+    | Gt -> lower (fun n -> n#gt bound)
+    | Le -> upper (fun n -> n#leq bound)
+    | Lt -> upper (fun n -> n#lt bound)
+    | Eq -> lower (fun n -> n#equal bound) && upper (fun n -> n#equal bound)
+    | Ne -> lower (fun n -> n#gt bound) || upper (fun n -> n#lt bound)
+    | _ -> false in
+  List.find_map (fun (binding: invariant_int) -> match binding#get_fact with
+      | NonRelationalFact (slot, FSymbolicExpr (XVar v)) when same_return v ->
+         List.find_map (fun (range: invariant_int) -> match range#get_fact with
+             | NonRelationalFact (other, FIntervalValue (low, high))
+                  when other#equal slot && satisfies low high ->
+                Some [binding#index; range#index]
+             | _ -> None) facts
+      | NonRelationalFact (v, FIntervalValue (low, high))
+           when same_return v && satisfies low high -> Some [binding#index]
+      | _ -> None) facts
 
 let rec local_address_root = function
   | CastE (typ, e) when is_pointer_type typ -> local_address_root e

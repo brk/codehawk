@@ -1513,14 +1513,21 @@ object (self)
     List.concat
       (List.map (fun (pc, _) ->
            match pc with
-           | XInitialized (ArgAddressedValue
+           | (XInitialized (ArgAddressedValue
                  (ArgValue (ParFormal n, ArgNoOffset), fieldoffset))
+              | XInitializedOnReturn (_, _, ArgAddressedValue
+                 (ArgValue (ParFormal n, ArgNoOffset), fieldoffset)))
                  when n > 0 && n <= List.length args ->
               let arg = List.nth args (n - 1) in
               let fvid = (TR.tget_ok (fdecls#get_varinfo_by_name fname)).vid in
               let pix = CCHInterfaceDictionary.interface_dictionary#index_xpredicate pc in
-              let marker = new symbol_t
-                  ~atts:[string_of_int fvid; string_of_int pix] "contract-initialized" in
+              let marker = match pc with
+                | XInitializedOnReturn _ -> new symbol_t
+                    ~atts:[string_of_int fvid; string_of_int pix;
+                           string_of_int (CCHContext.ccontexts#index_context context)]
+                    "contract-initialized-on-return"
+                | _ -> new symbol_t
+                    ~atts:[string_of_int fvid; string_of_int pix] "contract-initialized" in
               let rec initialize off typ =
                 let target = exp_translator#translate_lhs context (Mem arg, off) in
                 if target#isTmp then [] else

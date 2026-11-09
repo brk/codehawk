@@ -156,6 +156,30 @@ object (self)
          match localAssigns with
          | [] -> None
          | _ ->
+            let guards = List.filter (fun s ->
+                s#getBaseName = "contract-initialized-on-return") localAssigns in
+            let guarded = List.fold_left (fun result s -> match result with
+                | None -> None
+                | Some (ids, assumptions) ->
+                   (match s#getAttributes with
+                    | [vid; pred; context] ->
+                       (try
+                          let vid = int_of_string vid in
+                          let pc = CCHInterfaceDictionary.interface_dictionary#get_xpredicate
+                              (int_of_string pred) in
+                          match pc with
+                          | XInitializedOnReturn (op, n, _) ->
+                             let readctxt = poq#get_proof_obligation#get_context in
+                             (match CCHMemoryInitialization.guarded_return_dependency
+                                      poq readctxt (int_of_string context) vid op n with
+                              | Some more -> Some (more @ ids, PostAssumption (vid, pc) :: assumptions)
+                              | _ -> None)
+                          | _ -> None
+                        with _ -> None)
+                    | _ -> None)) (Some ([], [])) guards in
+            match guarded with
+            | None -> None
+            | Some (guard_ids, guard_assumptions) ->
             let modeled = List.filter_map (fun s ->
                 match s#getBaseName, s#getAttributes with
                 | "contract-initialized", [vid; pred] ->
@@ -163,11 +187,16 @@ object (self)
                      CCHInterfaceDictionary.interface_dictionary#get_xpredicate
                        (int_of_string pred)))
                 | _ -> None) localAssigns in
-            let deps = if modeled = [] then DLocal [inv#index] else
-                DEnvC ([inv#index], modeled) in
+            let modeled = guard_assumptions @ modeled in
+            let ids = inv#index :: guard_ids in
+            let deps = if modeled = [] then DLocal ids else DEnvC (ids, modeled) in
             let msg =
-              (String.concat
-                 "_xx_" (List.map self#get_symbol_name localAssigns)) in
+              if guard_assumptions = [] then
+                String.concat "_xx_" (List.map self#get_symbol_name localAssigns)
+              else "same call's return guard establishes conditional output initialization: "
+                ^ String.concat "; " (List.filter_map (function
+                    | PostAssumption (_, pc) -> Some (p2s (CCHExternalPredicate.xpredicate_to_pretty pc))
+                    | _ -> None) guard_assumptions) in
             let site = Some (__FILE__, __LINE__, mname) in
             Some (deps, msg, site)
        end
