@@ -59,3 +59,5 @@ typedef union {uint32_t bits;uint16_t half;} Data;
 extern int acquire_narrow(Data *out);
 uint32_t narrow_field_bad(void) { Data d; int r=acquire_narrow(&d); if(r<0)return 0; return d.bits; }
 void *checked_then_changed_good(void) { void *p; int r=acquire(&p); if(r<0)return 0; r=0; return p; }
+extern double acquire_float(void **out);
+void *float_guard_unknown(void) { void *p; double r=acquire_float(&p); if(r<0.0)return 0; return p; }

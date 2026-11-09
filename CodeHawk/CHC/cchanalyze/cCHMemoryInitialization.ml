@@ -314,6 +314,10 @@ let guarded_return_dependency (poq: po_query_int) ctxt callctxt callee op bound 
   let facts = poq#get_context_invariants ctxt in
   let same_return v =
     poq#env#is_function_return_value v
+    && (match fenv#get_type_unrolled (poq#env#get_callvar_callee v).vtype with
+        | TFun (ret, _, _, _) ->
+           (match fenv#get_type_unrolled ret with TInt _ -> true | _ -> false)
+        | _ -> false)
     && (poq#env#get_callvar_callee v).vid = callee
     && (CCHContext.ccontexts#index_context (poq#env#get_callvar_context v)) = callctxt in
   let satisfies low high =

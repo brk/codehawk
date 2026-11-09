@@ -2,7 +2,7 @@ Parser-only LP64 controls. Unsafe functions never execute.
 
 initialized-on-return(op,constant,lval) means return op constant implies
 initialized(lval); it grants nothing on other returns and no memory frame.
-All 16 positives must retain this full guarded PostAssumption. The 26 negative
+All 16 positives must retain this full guarded PostAssumption. The 27 negative
 or unsupported reads remain open. Six comparison forms round-trip through
 MathML and the interface dictionary without losing the signed constant.
 
@@ -19,3 +19,7 @@ explicit fixed global values and old uncertified parser inputs are excluded
 conservatively. The pointer slot becomes initialized, not its payload, backing
 extent, validity or lifetime. A narrow union-field promise cannot initialize
 the wider field. Opaque calls retain havoc; failure preservation is not assumed.
+
+Only integral callee results can establish a return guard. Floating-point
+guards stay unsupported; in particular, !(r<0) would not imply r>=0 for NaN.
+No finite-result assumption is introduced. The float control stays unknown.

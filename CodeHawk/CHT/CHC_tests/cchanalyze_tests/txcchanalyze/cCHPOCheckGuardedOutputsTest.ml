@@ -52,6 +52,6 @@ let () =
      "signed_narrow_bad"; "unsigned_status_bad"; "masked_status_bad"; "arithmetic_status_bad";
      "partial_status_bad"; "union_status_bad"; "volatile_status_unknown"; "loop_status_unknown";
      "branch_gap_bad"; "payload_bad"; "descriptor_sibling_bad"; "nonzero_error_bad";
-     "released_bad"; "narrow_field_bad"];
+     "released_bad"; "narrow_field_bad"; "float_guard_unknown"];
   CU.analysis_take_down "guarded_outputs";
-  print_endline "guarded outputs: 16 conditional positives, 26 open controls, six comparison round trips passed"
+  print_endline "guarded outputs: 16 conditional positives, 27 open controls, six comparison round trips passed"
