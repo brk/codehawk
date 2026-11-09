@@ -1454,7 +1454,8 @@ object (self)
             && proof_scaffolding#has_direct_callsite env#get_functionname context
             && (proof_scaffolding#get_direct_callsite env#get_functionname context)
                  #get_header = "lib:string" then
-           CCHMemoryInitialization.memset_local_byte_range env args
+           CCHMemoryInitialization.memset_local_byte_range env
+             (fun e -> Some (exp_translator#translate_exp context e)) args
          else [] in
        Ok (callop :: clear :: (sideeffect @ postconditions @ initialized @ rcode))
 

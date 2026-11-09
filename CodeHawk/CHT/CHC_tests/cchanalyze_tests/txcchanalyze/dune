@@ -12,6 +12,7 @@
         cCHPOCheckInitializedEntriesTest
         cCHPOCheckWDTBytesTest
         cCHPOCheckLocalBytesTest
+        cCHPOCheckAliasBytesTest
         )
   (deps
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz
@@ -46,5 +47,7 @@
         testinputs/PWDTBytes/wdt_bytes_c.xml
         testinputs/PLocalBytes/local_bytes.cch.tar.gz
         testinputs/PLocalBytes/local_bytes_c.xml
+        testinputs/PAliasBytes/alias_bytes.cch.tar.gz
+        testinputs/PAliasBytes/alias_bytes_c.xml
         )
   (libraries chlib chutil cchlib cchpre cchanalyze tchlib tcchanalyze))

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<c-analysis><cfile name="alias_bytes"><functions>
+<function name="readonly_call"><parameters/><sideeffects><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects></function>
+<function name="identity"><parameters><par name="p" nr="1"/></parameters><postconditions><post><math><apply><eq/><return/><ci>p</ci></apply></math></post></postconditions><sideeffects><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects></function>
+</functions></cfile></c-analysis>

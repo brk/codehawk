@@ -33,6 +33,7 @@
 open CHNumerical
 open XprTypes
 open CCHBasicTypes
+open CCHBasicUtil
 open CCHTypesCompare
 open CCHTypesUtil
 open CCHPreTypes
@@ -140,6 +141,7 @@ let rec relative_bytes poq typ off =
    Do not seed facts in functions whose lowered AST does not retain enough
    block-lifetime/control-flow information (loops/gotos/VLAs/assembly). *)
 let local_range_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
+let local_alias_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
 
 let local_byte_range_variable (env: c_environment_int) vi =
   env#mk_augmentation_variable "$initialized-bytes$" "local-byte-range"
@@ -156,7 +158,39 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
     | If (_, a, b, _) -> block a && block b
     | Block b -> block b
     | _ -> false in
-  Hashtbl.replace local_range_enabled env#get_functionname (block f.sbody)
+  let rec expression e = match e with
+    | CastE (typ, arg) ->
+       (match type_of_exp f.sdecls arg with
+        | Ok source ->
+           let pointer t = is_pointer_type (fenv#get_type_unrolled t) in
+           ((pointer typ = pointer source) || (pointer typ && exp_is_zero arg))
+           && expression arg
+        | _ -> false)
+    | Lval lv | AddrOf lv | StartOf lv -> lvalue lv
+    | BinOp (_, a, b, _) -> expression a && expression b
+    | UnOp (_, a, _) -> expression a
+    | Const _ | SizeOf _ | SizeOfE _ | AlignOf _ | AlignOfE _ -> true
+    | _ -> false
+  and lvalue (host, off) =
+    (match host with Var _ -> true | Mem e -> expression e) && offset off
+  and offset = function
+    | NoOffset -> true
+    | Field (_, rest) -> offset rest
+    | Index (e, rest) -> expression e && offset rest in
+  let rec aliases b = List.for_all (fun st -> match st.skind with
+      | Instr ins -> List.for_all (function
+          | Set (lv, e, _) -> lvalue lv && expression e
+          | Call (lv, fn, args, _) ->
+             (match lv with Some lv -> lvalue lv | _ -> true)
+             && expression fn && List.for_all expression args
+          | _ -> false) ins
+      | Return (e, _) -> (match e with Some e -> expression e | _ -> true)
+      | If (e, a, b, _) -> expression e && aliases a && aliases b
+      | Block b -> aliases b
+      | _ -> false) b.bstmts in
+  Hashtbl.replace local_range_enabled env#get_functionname (block f.sbody);
+  Hashtbl.replace local_alias_enabled env#get_functionname
+    (block f.sbody && aliases f.sbody)
 
 let rec local_address_root = function
   | CastE (typ, e) when is_pointer_type typ -> local_address_root e
@@ -188,41 +222,6 @@ let rec range_type_volatile seen typ =
          (fenv#get_comp key).cfields
     | _ -> false
 
-let memset_local_byte_range (env: c_environment_int) args =
-  let query = object method fenv = env#get_fdecls end in
-  let rec address = function
-    | CastE (typ, e) when is_pointer_type typ -> address e
-    | BinOp (PlusPI, e, index, _) ->
-       (match address e, literal_value query index,
-              get_pointer_expr_target_type env#get_fdecls e with
-        | Some (lv, first), Some (XConst (IntConst i)), Ok typ
-             when i#geq numerical_zero ->
-           (match constant (size_of_type env#get_fdecls typ) with
-            | Some n when n#gt numerical_zero -> Some (lv, first#add (i#mult n))
-            | _ -> None)
-        | _ -> None)
-    | e -> Option.map (fun lv -> lv, numerical_zero) (addressed_local e) in
-  if Hashtbl.find_opt local_range_enabled env#get_functionname <> Some true then [] else
-  match args with
-  | [dest; _; len] ->
-     (match address dest, literal_value query len with
-      | Some (((Var (_, vid), off) as lv), first), Some (XConst (IntConst n)) ->
-         (match List.find_opt (fun vi -> vi.vid = vid && not vi.vglob)
-                  env#get_fdecls#get_locals, type_of_lval env#get_fdecls lv with
-          | Some vi, Ok typ when not (range_type_volatile [] vi.vtype)
-                                 && first#geq numerical_zero && n#geq numerical_zero ->
-             (match constant (size_of_type env#get_fdecls typ) with
-              | Some size when (first#add n)#leq size ->
-                 let marker = new CHLanguage.symbol_t
-                     ~atts:[string_of_int (CCHDictionary.cdictionary#index_offset off);
-                            first#toString; n#toString] "memset-initialized-bytes" in
-                 [CCHCommand.make_c_cmd (CHLanguage.ASSIGN_SYM
-                    (local_byte_range_variable env vi, CHLanguage.SYM marker))]
-              | _ -> [])
-          | _ -> [])
-      | _ -> [])
-  | _ -> []
-
 (* A full clear covers nested subobjects without guessing structure layout.
    Partial intervals use only offsets whose byte position is already known
    (constant array indices/union members). Padding and bitfields are never
@@ -246,6 +245,145 @@ let rec contained_subobject poq typ off = match off with
              contained_subobject poq elem rest
           | _ -> None)
       | _ -> None)
+
+
+(* Numeric values are used only for unaddressed local slots and ordinary
+   structure/array fields. Escaped slots, globals, union views and pointer/int
+   conversions may retain representation/alias facts that cannot establish an
+   exact address here. Nonzero numeric pointer arithmetic is never rescaled. *)
+let safe_alias_slot (env: c_environment_int) lv =
+  let rec path typ = function
+    | NoOffset -> not (range_type_volatile [] typ)
+    | Field ((name, key), rest) ->
+       (match fenv#get_type_unrolled typ with
+        | TComp (k, _) when k = key && (fenv#get_comp k).cstruct ->
+           (match List.find_opt (fun f -> f.fname = name && f.fbitfield = None)
+                    (fenv#get_comp k).cfields with
+            | Some f -> path f.ftype rest | _ -> false)
+        | _ -> false)
+    | Index (Const (CInt (i, _, _)), rest) when i >= 0L ->
+       (match fenv#get_type_unrolled typ with TArray (elem, _, _) -> path elem rest | _ -> false)
+    | _ -> false in
+  Hashtbl.find_opt local_alias_enabled env#get_functionname = Some true
+  && List.for_all (fun g -> g#get_value = None)
+       CCHFileContract.file_contract#get_globalvar_contracts
+  && match lv with
+     | Var (_, vid), off ->
+        (match env#get_varinfo vid with
+         | Ok vi -> not vi.vglob && not vi.vaddrof
+                    && not (range_type_volatile [] vi.vtype) && path vi.vtype off
+         | _ -> false)
+     | _ -> false
+
+let exact_local_address (env: c_environment_int) = function
+  | XVar v when env#is_memory_address v ->
+     let (memref, off) = env#get_memory_address v in
+     (match memref#get_base with
+      | CStackAddress stack when env#is_local_variable stack ->
+         let (vi, baseoff) = env#get_local_variable stack in
+         if vi.vglob then None else
+           Some ((Var (vi.vname, vi.vid), add_offset baseoff off), numerical_zero)
+      | _ -> None)
+  | _ -> None
+
+let resolve_local_region (env: c_environment_int) get_value address =
+  let query = object method fenv = env#get_fdecls end in
+  let rec resolve = function
+    | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) -> resolve e
+    | AddrOf ((Var _, _) as lv) | StartOf ((Var _, _) as lv) -> Some (lv, numerical_zero)
+    | Lval lv as e when safe_alias_slot env lv ->
+       (match type_of_lval env#get_fdecls lv with
+        | Ok typ when is_pointer_type (fenv#get_type_unrolled typ) ->
+           Option.bind (get_value e) (exact_local_address env)
+        | _ -> None)
+    | BinOp ((PlusPI | IndexPI), base, index, _) ->
+       (match resolve base, literal_value query index,
+              get_pointer_expr_target_type env#get_fdecls base with
+        | Some (lv, first), Some (XConst (IntConst i)), Ok elem when i#geq numerical_zero ->
+           (match constant (size_of_type env#get_fdecls elem) with
+            | Some n when n#gt numerical_zero -> Some (lv, first#add (i#mult n))
+            | _ -> None)
+        | _ -> None)
+    | AddrOf (Mem base, off) | StartOf (Mem base, off) ->
+       (match resolve base, get_pointer_expr_target_type env#get_fdecls base with
+        | Some (lv, first), Ok _ when off = NoOffset -> Some (lv, first)
+        | Some (lv, first), Ok pointed ->
+           (match type_of_lval env#get_fdecls lv with
+            | Ok typ ->
+               let typ = fenv#get_type_unrolled typ in
+               let pointed = fenv#get_type_unrolled pointed in
+               let select anchor = match anchor with
+                 | (Var (_, vid), offset) ->
+                    (match env#get_varinfo vid with
+                     | Ok vi ->
+                        let alloff = add_offset offset off in
+                        (* Full byte proof checks the complete object path. *)
+                        Some ((Var (vi.vname, vi.vid), alloff), numerical_zero)
+                     | _ -> None)
+                 | _ -> None in
+               (match typ, constant (size_of_type env#get_fdecls pointed) with
+                | TArray (elem, _, _), Some sz when sz#gt numerical_zero
+                    && typ_compare (fenv#get_type_unrolled elem) pointed = 0
+                    && first#geq numerical_zero && (first#modulo sz)#equal numerical_zero ->
+                   let host, offset = lv in
+                   select (host, add_offset offset (mk_constant_index_offset (first#div sz)))
+                | _ when first#equal numerical_zero && typ_compare typ pointed = 0 -> select lv
+                | _ -> None)
+            | _ -> None)
+        | _ -> None)
+    | _ -> None in
+  resolve address
+
+let exact_local_length (env: c_environment_int) get_value expression =
+  let query = object method fenv = env#get_fdecls end in
+  let rec value e = match literal_value query e with
+    | Some _ as result -> result
+    | _ -> (match e with
+        | Lval lv when safe_alias_slot env lv ->
+           (match get_value e with Some (XConst (IntConst _) as x) -> Some x | _ -> None)
+        | CastE (typ, source) ->
+           (match fenv#get_type_unrolled typ, value source with
+            | TInt (kind, _), Some (XConst (IntConst n)) when kind <> IBool ->
+               let range = range_of_type env#get_fdecls typ in
+               if n#geq range#min && n#leq range#max then Some (XConst (IntConst n)) else None
+            | _ -> None)
+        | _ -> None) in
+  value expression
+
+let context_local_value (poq: po_query_int) ctxt = function
+  | Lval ((Var (_, vid), off) as lv) when safe_alias_slot poq#env lv ->
+     (match poq#env#get_varinfo vid with
+      | Ok vi ->
+         let v = poq#env#mk_program_var vi off CHLanguage.NUM_VAR_TYPE in
+         List.find_map (fun (inv: invariant_int) -> if inv#applies_to_var v then
+             match inv#expr with
+             | Some ((XVar _ | XConst (IntConst _)) as x) -> Some x
+             | _ -> None else None) (poq#get_context_invariants ctxt)
+      | _ -> None)
+  | _ -> None
+
+let memset_local_byte_range (env: c_environment_int) get_value args =
+  if Hashtbl.find_opt local_range_enabled env#get_functionname <> Some true then [] else
+  match args with
+  | [dest; _; len] ->
+     (match resolve_local_region env get_value dest, exact_local_length env get_value len with
+      | Some (((Var (_, vid), off) as lv), first), Some (XConst (IntConst n)) ->
+         (match List.find_opt (fun vi -> vi.vid = vid && not vi.vglob)
+                  env#get_fdecls#get_locals, type_of_lval env#get_fdecls lv with
+          | Some vi, Ok typ when not (range_type_volatile [] vi.vtype)
+                                 && first#geq numerical_zero && n#geq numerical_zero ->
+             (match constant (size_of_type env#get_fdecls typ) with
+              | Some size when (first#add n)#leq size ->
+                 let marker = new CHLanguage.symbol_t
+                     ~atts:[string_of_int (CCHDictionary.cdictionary#index_offset off);
+                            first#toString; n#toString] "memset-initialized-bytes" in
+                 [CCHCommand.make_c_cmd (CHLanguage.ASSIGN_SYM
+                    (local_byte_range_variable env vi, CHLanguage.SYM marker))]
+              | _ -> [])
+          | _ -> [])
+      | _ -> [])
+  | _ -> []
+
 
 let prove_cleared_local_bytes (poq: po_query_int) ctxt (lv: lval) start count =
   match lv with
@@ -377,8 +515,14 @@ let initialized_local_bytes ?(start=numerical_zero) (poq: po_query_int) ctxt (lv
       | _ -> None)
   | _ -> None
 
+let addressed_source_at (poq: po_query_int) ctxt expression =
+  match addressed_source poq expression with
+  | Some _ as result -> result
+  | _ -> resolve_local_region poq#env (context_local_value poq ctxt) expression
+
 let prove_initialized_range poq ctxt address length =
-  match addressed_source poq address, literal_value poq length with
+  match addressed_source_at poq ctxt address,
+        exact_local_length poq#env (context_local_value poq ctxt) length with
   | Some (lv, start), Some x ->
      (match constant x with
       | Some n -> initialized_local_bytes ~start poq ctxt lv n
@@ -406,7 +550,7 @@ let prove_memcpy_read poq sequence (read: lval) =
            | _ ->
               (match literal_value poq length with
                | Some x -> constant x | _ -> None) in
-         (match addressed_local dest, addressed_source poq source, len, read with
+         (match addressed_local dest, addressed_source_at poq call#get_context source, len, read with
           | Some ((Var (_, dvid), doff) as dlv), Some (slv, sstart), Some n,
             (Var (_, rvid), roff) when dvid = rvid ->
              (match local_type poq dlv, local_type poq read,
