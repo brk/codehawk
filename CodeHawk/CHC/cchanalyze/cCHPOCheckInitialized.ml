@@ -137,6 +137,18 @@ object (self)
   method private inv_implies_safe (inv: invariant_int) =
     let mname = "inv_implies_safe" in
     match inv#get_fact with
+    | NonRelationalFact (_, FInitializedSet l)
+         when List.exists (fun s -> s#getBaseName = "initialized-range") l ->
+       (* A range marker records bytes, not assignment of an entire scalar.
+          In particular, memset(&x, 0, 1) does not initialize a four-byte x.
+          Require exact byte coverage and retain any frame dependencies. *)
+       let ctxt = poq#get_proof_obligation#get_context in
+       (match CCHMemoryInitialization.prove_initialized_range poq ctxt
+                (AddrOf lval) (SizeOfE (Lval lval)) with
+        | Some deps -> Some (join_dependencies (DLocal [inv#index]) deps,
+            "complete local initialized byte range covers this read",
+            Some (__FILE__, __LINE__, mname))
+        | _ -> None)
     | NonRelationalFact (_, FInitializedSet l) ->
        let localAssigns =
          List.filter (fun s -> not (s#getBaseName = "parameter")) l in
@@ -629,7 +641,20 @@ object (self)
     | _ -> false
 
   method check_safe =
-    (List.fold_left (fun acc inv ->
+    (let ctxt = poq#get_proof_obligation#get_context in
+     match type_of_lval poq#env#get_fdecls lval with
+     | Ok typ ->
+        (match CCHMemoryInitialization.sizeof poq typ with
+         | Some width ->
+            (match CCHMemoryInitialization.prove_cleared_local_bytes
+                     poq ctxt lval numerical_zero width with
+             | Some deps ->
+                poq#record_safe_result deps "exact local memset bytes cover scalar read";
+                true
+             | _ -> false)
+         | _ -> false)
+     | _ -> false)
+    || (List.fold_left (fun acc inv ->
             acc ||
               match self#inv_implies_safe inv with
               | Some (deps, msg, site) ->

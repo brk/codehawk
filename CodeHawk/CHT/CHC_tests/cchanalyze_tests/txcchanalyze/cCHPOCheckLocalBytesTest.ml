@@ -27,7 +27,7 @@ let () =
         failwith (CU.located_po_to_string po)) (reads name))
     ["full_array_good"; "full_scalar_good"; "full_union_good"; "field_good";
      "nested_good"; "partial_good"; "partial_typed_good"; "branches_good";
-     "disjoint_write_good"; "disjoint_field_good"];
+     "disjoint_write_good"; "disjoint_field_good"; "direct_clear_good"];
   List.iter (fun name -> List.iter (fun po ->
       if not po#is_safe || po#is_violation then
         failwith (CU.located_po_to_string po);
@@ -45,6 +45,7 @@ let () =
      "volatile_unknown"; "user_clear_unknown"; "clear_indirect_unknown";
      "allocation_unknown"; "loop_lifetime_unknown"; "asm_unknown";
      "two_clears_unknown"; "pointer_alias_unknown"; "descriptor_unknown";
-     "vla_unknown"];
+     "vla_unknown"; "direct_partial_bad"; "direct_model_bad";
+     "direct_model_partial_bad"];
   CU.analysis_take_down "local_bytes";
   print_endline "local memset bytes: intervals, fields, joins, frames and invalidation passed"

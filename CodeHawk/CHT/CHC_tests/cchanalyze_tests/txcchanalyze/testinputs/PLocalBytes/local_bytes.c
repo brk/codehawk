@@ -48,3 +48,7 @@ uint32_t pointer_alias_unknown(void) { Entry a[176]; void *p=a; uint32_t value; 
 typedef struct { void *pointer; unsigned long allocation; } Descriptor;
 uint32_t descriptor_unknown(void) { Entry a[176]; Descriptor d={a,sizeof(a)}; uint32_t value; memset(d.pointer,0,d.allocation); memcpy(&value,&a[175].value,4); return value; }
 uint32_t vla_unknown(int n) { uint32_t value=0; if(n==4) { unsigned char a[n]; memset(a,0,n); memcpy(&value,a,4); } return value; }
+uint32_t direct_clear_good(void) { uint32_t value; memset(&value,0,4); return value; }
+uint32_t direct_partial_bad(void) { uint32_t value; memset(&value,0,1); return value; }
+uint32_t direct_model_bad(void) { uint32_t value; user_clear(&value,4); return value; }
+uint32_t direct_model_partial_bad(void) { uint32_t value; user_clear(&value,1); return value; }

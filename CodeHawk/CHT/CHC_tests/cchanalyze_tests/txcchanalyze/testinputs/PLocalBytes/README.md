@@ -16,3 +16,8 @@ No production analysis is skipped and no loop bound/capacity is changed. Pointer
 aliases, descriptor-held pointers, allocator results and callback parameters
 remain unknown. Separate partial clears are not merged. The actual WDT copy
 reads remain open; this feature first proves the local cleared aggregate.
+
+Four scalar-read controls extend the fixture to 41 functions. Exact local memset
+coverage proves direct_clear_good; one-byte local clear and one-byte modeled
+initialized-range cannot initialize uint32_t. Generic full-range models also
+remain unknown until their interval provenance/frame is represented soundly.
