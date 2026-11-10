@@ -261,7 +261,7 @@ let readonly_descriptor_address_uses body vid =
   let rec expression allowed = function
        | AddrOf ((Var (_, id), _) as lv) | StartOf ((Var (_, id), _) as lv) ->
           if id = vid then allowed && snd lv = NoOffset else lvalue lv
-       | Lval lv -> lvalue lv
+       | Lval lv | AddrOf lv | StartOf lv -> lvalue lv
        | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) -> expression allowed e
        | CastE (_, e) | UnOp (_, e, _) -> expression false e
        | BinOp (_, a, b, _) -> expression false a && expression false b
