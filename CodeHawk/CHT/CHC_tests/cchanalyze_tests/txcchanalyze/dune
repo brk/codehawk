@@ -20,8 +20,11 @@
         cCHPOCheckDescriptorGetterTest
         cCHPOCheckNullCastTest
         cCHPOCheckGuardedRegionsTest
+        cCHPOCheckBoundedFormatTest
         )
   (deps
+        testinputs/PBoundedFormat/bounded_format.cch.tar.gz
+        testinputs/PBoundedFormat/bounded_format_c.xml
         testinputs/PGuardedRegions/guarded_regions.cch.tar.gz
         testinputs/PGuardedRegions/guarded_regions_c.xml
         testinputs/PNullCast/null_cast.cch.tar.gz

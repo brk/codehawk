@@ -960,7 +960,7 @@ and get_input_format_proofobligations env argspec arg =
        (get_po argtype (TInt (IInt, []))) @ [PNotNull arg]
 
 
-and get_output_format_proofobligations env argspec arg =
+and get_output_format_proofobligations env argspec arg precision_arg =
   let conversion = argspec#get_conversion in
   let argtype = type_of_exp env arg in
   let get_int_cast (ikfrom: ikind) (ikto: ikind) (e: exp) =
@@ -1102,14 +1102,46 @@ and get_output_format_proofobligations env argspec arg =
            let argptrtotype =
              TR.tget_ok (get_pointer_expr_target_type env arg) in
            let lenarg = CnApp ("ntp", [Some arg], TInt (IInt, [])) in
-           (* TBD: may have precision *)
+           (* Narrow %s reads at most a nonnegative precision's byte count.
+              Requiring that complete prefix initialized is conservative when
+              a NUL occurs earlier. Negative/unknown precision is unbounded;
+              field width is never a read bound, and %ls is not a byte scan. *)
+           let rec literal = function
+             | Const (CInt (n, _, _)) -> Some (mkNumericalFromInt64 n)
+             | SizeOf typ -> (match size_of_type env typ with
+                 | XConst (IntConst n) -> Some n | _ -> None)
+             | SizeOfE e -> (match type_of_exp env e with
+                 | Ok typ -> (match size_of_type env typ with
+                     | XConst (IntConst n) -> Some n | _ -> None)
+                 | _ -> None)
+             | CastE (typ, e) ->
+                (match fenv#get_type_unrolled typ, literal e with
+                 | TInt (kind, _), Some n when kind <> IBool ->
+                    let range = range_of_type env typ in
+                    if n#geq range#min && n#leq range#max then Some n else None
+                 | _ -> None)
+             | _ -> None in
+           let precision = if argspec#has_lengthmodifier then None else
+             match argspec#get_precision with
+             | PrecisionConstant n -> Some (mkNumerical n)
+             | PrecisionArgument -> Option.bind precision_arg literal
+             | NoPrecision -> None in
+           let precision = Option.bind precision (fun n ->
+               let range = range_of_type env (TInt (IInt, [])) in
+               if n#geq numerical_zero && n#leq range#max then Some n else None) in
            let dsttype = TInt (IChar, []) in
            let ptrcast = PPointerCast(argptrtotype, dsttype, arg) in
            let notnull = PNotNull arg in
            let nullterminated = PNullTerminated arg in
            let ptrupperbound = PPtrUpperBound(dsttype, PlusPI, arg, lenarg) in
            let initializedrange = PInitializedRange (arg, lenarg) in
-           [ptrcast; notnull; nullterminated; ptrupperbound; initializedrange]
+           (match precision with
+            | Some n ->
+               let bound = make_constant_exp n in
+               [ptrcast; notnull; PValidMem arg;
+                PPtrUpperBound (dsttype, PlusPI, arg, bound);
+                PInitializedRange (arg, bound)]
+            | _ -> [ptrcast; notnull; nullterminated; ptrupperbound; initializedrange])
          else
            let dsttype = TPtr (TInt (IChar, []), []) in
            let cast = PFormatCast(ty, dsttype, arg) in
@@ -1268,7 +1300,10 @@ and get_formatargs_po
                   if isinput then
                     get_input_format_proofobligations env argspec arg
                   else
-                    get_output_format_proofobligations env argspec arg in
+                    let precision_arg =
+                      if argspec#get_precision = PrecisionArgument && i > index then
+                        Some (List.nth args (i - 1)) else None in
+                    get_output_format_proofobligations env argspec arg precision_arg in
                 (i, pfmt)) argspecs fmtargs in
           (pv, args_pos)
        | _ ->
