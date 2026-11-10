@@ -400,6 +400,24 @@ let function_scope_local vi =
   not vi.vglob && not (List.exists (function
       | Attr ("goblint_cil_nested", _) -> true | _ -> false) vi.vattr)
 
+(* A CIL local declaration alone does not establish a live automatic object:
+   nested blocks are flattened, and their addresses can outlive the objects.
+   Until declaration/use scopes are represented, accept only fixed-size locals
+   in the original function block, certified by the parser.  This deliberately
+   leaves even live nested aliases open.  Static storage has function-independent
+   lifetime.  Missing metadata must never mean "not nested". *)
+let stack_address_lifetime_known (env: c_environment_int) vi =
+  vi.vglob || vi.vstorage = Static
+  || (function_scope_local vi
+      && (match constant (size_of_type env#get_fdecls vi.vtype) with
+          | Some n -> n#gt numerical_zero
+          | _ -> false)
+      && (match Hashtbl.find_opt local_function_bodies env#get_functionname with
+          | Some body -> List.exists (function
+              | Attr ("codehawk_nested_scope_metadata_v1", []) -> true
+              | _ -> false) body.sbody.battrs
+          | _ -> false))
+
 let guarded_output_initialization_enabled env =
   Hashtbl.find_opt guarded_outputs_enabled env#get_functionname = Some true
 

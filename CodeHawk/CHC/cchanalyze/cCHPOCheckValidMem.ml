@@ -196,9 +196,15 @@ object (self)
     match membase with
     | CStackAddress stackvar when poq#env#is_local_variable stackvar ->
        let (vinfo, _) = poq#env#get_local_variable stackvar in
-       let msg =
-         "address of stack variable: " ^ vinfo.vname ^ " is valid memory" in
-       Some (deps, msg)
+       if CCHMemoryInitialization.stack_address_lifetime_known poq#env vinfo then
+         let msg =
+           "address of stack variable: " ^ vinfo.vname ^ " is valid memory" in
+         Some (deps, msg)
+       else begin
+         poq#set_diagnostic_arg 1
+           ("no lexical lifetime evidence for local object: " ^ vinfo.vname);
+         None
+       end
     | CGlobalAddress gvar when poq#env#is_global_variable gvar ->
        let (vinfo,_) = poq#env#get_global_variable gvar in
        let msg  =

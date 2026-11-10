@@ -1,5 +1,7 @@
 (tests
   (names
+        cCHPOCheckScopePermissionsTest
+        cCHPOCheckScopeLegacyTest
         cCHPOCheckAbsoluteValidityTest
         cCHPOCheckReturnValidityTest
         cCHPOCheckReturnBoundsTest
@@ -29,6 +31,9 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PScopePermissions/scope_permissions.cch.tar.gz
+        testinputs/PScopePermissions/scope_permissions_c.xml
+        testinputs/PScopePermissionsLegacy/scope_legacy.cch.tar.gz
         testinputs/PAbsoluteValidity/absolute_validity.cch.tar.gz
         testinputs/PAbsoluteValidity/absolute_validity_c.xml
         testinputs/PReturnValidity/return_validity.cch.tar.gz

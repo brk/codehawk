@@ -124,8 +124,14 @@ object (self)
     match memrefbase with
     | CStackAddress stackvar when poq#env#is_local_variable stackvar ->
        let (vinfo, offset) = poq#env#get_local_variable stackvar in
-       let msg = self#var_address_to_string vinfo offset in
-       Some (deps, msg)
+       if CCHMemoryInitialization.stack_address_lifetime_known poq#env vinfo then
+         let msg = self#var_address_to_string vinfo offset in
+         Some (deps, msg)
+       else begin
+         poq#set_diagnostic_arg 1
+           ("no lexical lifetime evidence for local object: " ^ vinfo.vname);
+         None
+       end
     | CStringLiteral _ ->
        let msg = "value is address of a string literal" in
        Some (deps, msg)
