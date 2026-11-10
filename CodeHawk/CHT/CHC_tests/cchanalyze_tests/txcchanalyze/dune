@@ -22,8 +22,11 @@
         cCHPOCheckGuardedRegionsTest
         cCHPOCheckBoundedFormatTest
         cCHPOCheckScalarGettersTest
+        cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PNullableAlias/nullable_alias.cch.tar.gz
+        testinputs/PNullableAlias/nullable_alias_c.xml
         testinputs/PScalarGetters/scalar_getters.cch.tar.gz
         testinputs/PScalarGetters/scalar_getters_c.xml
         testinputs/PBoundedFormat/bounded_format.cch.tar.gz

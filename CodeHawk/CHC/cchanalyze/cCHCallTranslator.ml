@@ -510,8 +510,9 @@ object (self)
                    (returntype:typ) =
     let rval =
       match postconditions with
-      | (l, [])
-        | (l, [(XNull _, _)]) ->
+      (* A normal-return alias cannot replace a nullable error return.
+         Keep the immutable call result when any error alternative exists. *)
+      | (l, []) ->
          List.fold_left (fun acc (pc, _) ->
              match acc with
              | Some _ -> acc
