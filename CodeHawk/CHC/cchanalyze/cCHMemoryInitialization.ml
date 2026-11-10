@@ -241,6 +241,55 @@ let local_byte_range_variables (env: c_environment_int) =
   List.map (local_byte_range_variable env) env#get_fdecls#get_locals
   @ allocated_byte_range_variables env
 
+(* A local descriptor address may occur only as the complete argument of a
+   modeled read-only field getter. This syntactic escape check is shared with
+   guard transport: ordinary field assignments do not make an unescaped
+   descriptor into an aliased return-status slot. *)
+let readonly_descriptor_address_uses body vid =
+  let contracts = CCHFileContract.file_contract in
+  let getter_argument name index =
+       if not (contracts#has_function_contract name) then false else
+         let contract = contracts#get_function_contract name in
+         contract#get_sideeffects = [XPreservesAllMemory]
+         && List.exists (function
+             | XRelationalExpr (Eq, ReturnValue,
+                 ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), ArgFieldOffset _))
+               | XRelationalExpr (Eq,
+                   ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), ArgFieldOffset _), ReturnValue) ->
+                n = index
+             | _ -> false) contract#get_postconditions in
+  let rec expression allowed = function
+       | AddrOf ((Var (_, id), _) as lv) | StartOf ((Var (_, id), _) as lv) ->
+          if id = vid then allowed && snd lv = NoOffset else lvalue lv
+       | Lval lv -> lvalue lv
+       | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) -> expression allowed e
+       | CastE (_, e) | UnOp (_, e, _) -> expression false e
+       | BinOp (_, a, b, _) -> expression false a && expression false b
+       | Const _ | SizeOf _ | AlignOf _ -> true
+       | SizeOfE e | AlignOfE e -> expression false e
+       | _ -> false
+     and lvalue (host, off) =
+       (match host with Var _ -> true | Mem e -> expression false e) && offset off
+     and offset = function
+       | NoOffset -> true | Field (_, o) -> offset o
+       | Index (e, o) -> expression false e && offset o in
+  let rec block b = List.for_all (fun s -> match s.skind with
+         | Instr ins -> List.for_all (function
+             | Set (lv, e, _) -> lvalue lv && expression false e
+             | Call (lhs, fn, args, _) ->
+                (match lhs with None -> true | Some lv -> lvalue lv)
+                && expression false fn
+                && List.for_all (fun (i, arg) ->
+                    let allowed = match fn with
+                      | Lval (Var (name, _), NoOffset) -> getter_argument name (i + 1)
+                      | _ -> false in
+                    expression allowed arg) (List.mapi (fun i x -> i, x) args)
+             | _ -> false) ins
+         | Return (e, _) -> (match e with None -> true | Some e -> expression false e)
+         | If (e, a, b, _) -> expression false e && block a && block b
+         | Block b -> block b | _ -> false) b.bstmts in
+  block body.sbody
+
 let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
   Hashtbl.replace local_function_bodies env#get_functionname f;
   let rec block b = List.for_all stmt b.bstmts
@@ -324,7 +373,10 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
              | _ -> false)
          | _ -> false in
        (match env#get_varinfo vid with
-        | Ok vi -> not vi.vglob && not vi.vaddrof && ordinary vi.vtype off
+        | Ok vi -> not vi.vglob && ordinary vi.vtype off
+                   && (not vi.vaddrof
+                       || (off <> NoOffset && vi.vattr = []
+                           && readonly_descriptor_address_uses f vi.vid))
         | _ -> false)
     | _ -> false in
   let assign lv source value = match type_of_lval f.sdecls lv with
@@ -556,49 +608,8 @@ let readonly_getter_field (env: c_environment_int) argument soff =
   | Some vid, Some body when
       Hashtbl.find_opt local_alias_enabled env#get_functionname = Some true
       && List.for_all (fun g -> g#get_value = None) contracts#get_globalvar_contracts ->
-     let getter_argument name index =
-       if not (contracts#has_function_contract name) then false else
-         let contract = contracts#get_function_contract name in
-         contract#get_sideeffects = [XPreservesAllMemory]
-         && List.exists (function
-             | XRelationalExpr (Eq, ReturnValue,
-                 ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), ArgFieldOffset _))
-               | XRelationalExpr (Eq,
-                   ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), ArgFieldOffset _), ReturnValue) ->
-                n = index
-             | _ -> false) contract#get_postconditions in
-     let rec expression allowed = function
-       | AddrOf ((Var (_, id), _) as lv) | StartOf ((Var (_, id), _) as lv) ->
-          if id = vid then allowed && snd lv = NoOffset else lvalue lv
-       | Lval lv -> lvalue lv
-       | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) -> expression allowed e
-       | CastE (_, e) | UnOp (_, e, _) -> expression false e
-       | BinOp (_, a, b, _) -> expression false a && expression false b
-       | Const _ | SizeOf _ | AlignOf _ -> true
-       | SizeOfE e | AlignOfE e -> expression false e
-       | _ -> false
-     and lvalue (host, off) =
-       (match host with Var _ -> true | Mem e -> expression false e) && offset off
-     and offset = function
-       | NoOffset -> true | Field (_, o) -> offset o
-       | Index (e, o) -> expression false e && offset o in
-     let rec block b = List.for_all (fun s -> match s.skind with
-         | Instr ins -> List.for_all (function
-             | Set (lv, e, _) -> lvalue lv && expression false e
-             | Call (lhs, fn, args, _) ->
-                (match lhs with None -> true | Some lv -> lvalue lv)
-                && expression false fn
-                && List.for_all (fun (i, arg) ->
-                    let allowed = match fn with
-                      | Lval (Var (name, _), NoOffset) -> getter_argument name (i + 1)
-                      | _ -> false in
-                    expression allowed arg) (List.mapi (fun i x -> i, x) args)
-             | _ -> false) ins
-         | Return (e, _) -> (match e with None -> true | Some e -> expression false e)
-         | If (e, a, b, _) -> expression false e && block a && block b
-         | Block b -> block b | _ -> false) b.bstmts in
      (match env#get_varinfo vid with
-      | Ok vi when function_scope_local vi && block body.sbody ->
+      | Ok vi when function_scope_local vi && readonly_descriptor_address_uses body vid ->
          let rec select typ off =
            let typ = fenv#get_type_unrolled typ in
            if is_volatile_type typ then None else match off with

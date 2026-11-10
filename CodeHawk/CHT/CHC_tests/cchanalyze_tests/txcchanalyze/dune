@@ -1,5 +1,6 @@
 (tests
   (names
+        cCHPOCheckPooledGettersTest
         cCHPOCheckScopePermissionsTest
         cCHPOCheckScopeLegacyTest
         cCHPOCheckAbsoluteValidityTest
@@ -31,6 +32,8 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PPooledGetters/pooled_getters.cch.tar.gz
+        testinputs/PPooledGetters/pooled_getters_c.xml
         testinputs/PScopePermissions/scope_permissions.cch.tar.gz
         testinputs/PScopePermissions/scope_permissions_c.xml
         testinputs/PScopePermissionsLegacy/scope_legacy.cch.tar.gz
