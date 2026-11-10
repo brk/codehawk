@@ -525,7 +525,7 @@ let safe_alias_slot (env: c_environment_int) lv =
      | _ -> false
 
 (* A descriptor's address may be exposed solely to a modeled read-only getter
-   returning one of its pointer fields. Do not reuse numeric field facts for
+   returning an ordinary pointer or integer field. Do not reuse numeric field facts for
    arbitrary escaped descriptors: byte writes, root-alias returns, opaque
    calls and union views can otherwise leave stale overlapping values. *)
 let readonly_getter_field (env: c_environment_int) argument soff =
@@ -594,10 +594,23 @@ let readonly_getter_field (env: c_environment_int) argument soff =
                      | _ -> None)
                  | _ -> None)
              | ArgNoOffset when is_pointer_type typ -> Some NoOffset
+             | ArgNoOffset -> (match typ with TInt (kind, _) when kind <> IBool -> Some NoOffset | _ -> None)
              | _ -> None in
          Option.map (fun off -> Lval (Var (vi.vname, vi.vid), off)) (select vi.vtype soff)
       | _ -> None)
   | _ -> None
+
+(* Scalar equality transport must not silently narrow/reinterpret a field.
+   Pointer qualifiers retain the existing exact-address policy. No floating,
+   Boolean, enum, aggregate or mixed-width integer field is transported. *)
+let readonly_getter_result_field env argument soff returntype =
+  Option.bind (readonly_getter_field env argument soff) (fun field ->
+      match type_of_exp env#get_fdecls field with
+      | Ok typ -> (match fenv#get_type_unrolled typ, fenv#get_type_unrolled returntype with
+          | TPtr _, TPtr _ -> Some field
+          | TInt (a, _), TInt (b, _) when a = b && a <> IBool -> Some field
+          | _ -> None)
+      | _ -> None)
 
 let exact_local_address (env: c_environment_int) = function
   | XVar v when env#is_memory_address v ->

@@ -1,0 +1,178 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="scalar_getters">
+    <functions>
+      <function name="get_capacity">
+        <parameters>
+          <par name="d" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>d</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <eq />
+                <return />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>d</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="post_only_capacity">
+        <parameters>
+          <par name="d" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>d</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <eq />
+                <return />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>d</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="get_float_capacity">
+        <parameters>
+          <par name="d" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>d</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <eq />
+                <return />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>d</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="get_bool_capacity">
+        <parameters>
+          <par name="d" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>d</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <eq />
+                <return />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>d</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

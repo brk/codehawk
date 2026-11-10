@@ -21,8 +21,11 @@
         cCHPOCheckNullCastTest
         cCHPOCheckGuardedRegionsTest
         cCHPOCheckBoundedFormatTest
+        cCHPOCheckScalarGettersTest
         )
   (deps
+        testinputs/PScalarGetters/scalar_getters.cch.tar.gz
+        testinputs/PScalarGetters/scalar_getters_c.xml
         testinputs/PBoundedFormat/bounded_format.cch.tar.gz
         testinputs/PBoundedFormat/bounded_format_c.xml
         testinputs/PGuardedRegions/guarded_regions.cch.tar.gz

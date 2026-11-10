@@ -529,10 +529,9 @@ object (self)
                     ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff))
                   | XRelationalExpr (Eq,
                       ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff), ReturnValue)
-                    when n > 0 && n <= List.length cargs
-                         && is_pointer_type (fenv#get_type_unrolled returntype) ->
-                   (match CCHMemoryInitialization.readonly_getter_field
-                            env (List.nth cargs (n - 1)) soff with
+                    when n > 0 && n <= List.length cargs ->
+                   (match CCHMemoryInitialization.readonly_getter_result_field
+                            env (List.nth cargs (n - 1)) soff returntype with
                     | Some field ->
                        let arg = exp_translator#translate_exp context field in
                        Some (xpr2numexpr (fun () -> env#mk_num_temp)
@@ -1023,10 +1022,9 @@ object (self)
                     ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff))
                   | XRelationalExpr (Eq,
                       ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff), ReturnValue)
-                    when n > 0 && n <= List.length cargs
-                         && is_pointer_type (fenv#get_type_unrolled returntype) ->
-                   (match CCHMemoryInitialization.readonly_getter_field
-                            env (List.nth cargs (n - 1)) soff with
+                    when n > 0 && n <= List.length cargs ->
+                   (match CCHMemoryInitialization.readonly_getter_result_field
+                            env (List.nth cargs (n - 1)) soff returntype with
                     | Some field ->
                        let arg = exp_translator#translate_exp context field in
                        Some (xpr2numexpr (fun () -> env#mk_num_temp)
