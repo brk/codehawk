@@ -1,5 +1,6 @@
 (tests
   (names
+        cCHPOCheckParameterRangesTest
         cCHPOCheckParameterRegionsTest
         cCHPOCheckPooledGettersTest
         cCHPOCheckScopePermissionsTest
@@ -33,6 +34,8 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PParameterRanges/parameter_ranges.cch.tar.gz
+        testinputs/PParameterRanges/parameter_ranges_c.xml
         testinputs/PParameterRegions/parameter_regions.cch.tar.gz
         testinputs/PParameterRegions/parameter_regions_c.xml
         testinputs/PPooledGetters/pooled_getters.cch.tar.gz

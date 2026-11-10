@@ -1,0 +1,78 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="parameter_ranges">
+    <functions>
+      <function name="acquire">
+        <parameters>
+          <par name="out" nr="1" />
+          <par name="size" nr="2" />
+        </parameters>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="ge" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+          <post>
+            <math>
+              <apply>
+                <buffer-on-return op="ge" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+                <ci>size</ci>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="require_bytes">
+        <parameters>
+          <par name="pointer" nr="1" />
+          <par name="count" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>pointer</ci>
+                <apply>
+                  <byte-size />
+                  <ci>count</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="require_words">
+        <parameters>
+          <par name="pointer" nr="1" />
+          <par name="count" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>pointer</ci>
+                <apply>
+                  <index-size />
+                  <ci>count</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

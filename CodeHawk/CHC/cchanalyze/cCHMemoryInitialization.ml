@@ -154,21 +154,28 @@ type byte_capacity_t =
   | ConstantCapacity of numerical_t
   | ArgumentCapacity of program_context_int * exp
 
-(* The domain reads actual argument values at their call contexts. A plain
-   unsigned slot with the same integral kind as the formal needs no modeled
-   argument conversion. Reject addressed, volatile and nested count slots. *)
+let unsigned_count_kind (env: c_environment_int) = function
+  | Lval (Var (_, vid), NoOffset) ->
+     (match env#get_varinfo vid with
+      | Ok vi when not vi.vglob && not vi.vaddrof && vi.vstorage <> Static && vi.vattr = [] ->
+         (match fenv#get_type_unrolled vi.vtype with
+          | TInt (kind, _) as typ when kind <> IBool && is_unsigned_type kind
+                                       && not (is_volatile_type typ) -> Some kind
+          | _ -> None)
+      | _ -> None)
+  | _ -> None
+
+(* A count argument with the same integral kind as its formal needs no
+   modeled argument conversion. *)
 let unsigned_count_argument (env: c_environment_int) (call: direct_callsite_int) index =
   if index < 1 then None else
   match List.nth_opt call#get_arguments (index - 1),
         fenv#get_type_unrolled call#get_callee.vtype with
-  | Some (Lval (Var (_, vid), NoOffset) as arg), TFun (_, Some formals, _, _) ->
-     (match env#get_varinfo vid, List.nth_opt formals (index - 1) with
-      | Ok vi, Some (_, formal, _) when not vi.vglob && not vi.vaddrof
-                                     && vi.vstorage <> Static && vi.vattr = [] ->
-         (match fenv#get_type_unrolled vi.vtype, fenv#get_type_unrolled formal with
-          | (TInt (actual, _) as typ), TInt (expected, _)
-               when actual = expected && actual <> IBool && is_unsigned_type actual
-                    && not (is_volatile_type typ) -> Some arg
+  | Some arg, TFun (_, Some formals, _, _) ->
+     (match unsigned_count_kind env arg, List.nth_opt formals (index - 1) with
+      | Some actual, Some (_, formal, _) ->
+         (match fenv#get_type_unrolled formal with
+          | TInt (expected, _) when actual = expected -> Some arg
           | _ -> None)
       | _ -> None)
   | _ -> None
@@ -966,7 +973,7 @@ let count_summary_dependencies (poq: po_query_int) =
         List.map (fun (predicate, _) -> PostAssumption (callee.vid, predicate)) predicates)
     poq#get_function_direct_callsites
 
-let prove_allocated_bytes (poq: po_query_int) ctxt address count =
+let prove_allocated_bytes (poq: po_query_int) ctxt address requested =
   let facts = poq#get_context_invariants ctxt in
   let aliases = ref [] in
   let value e =
@@ -983,9 +990,14 @@ let prove_allocated_bytes (poq: po_query_int) ctxt address count =
     result in
   match resolve_allocated_region poq#env value address with
   | Some (v, capacity, first, span, leaf)
-       when first#geq numerical_zero && count#gt numerical_zero
-            && (match leaf with Some width -> count#leq width | _ -> true) ->
-     let width = match span with Some n -> n | _ -> count in
+       when first#geq numerical_zero ->
+     let range = match span, leaf with
+       | Some span, Some leaf ->
+          (* A field is covered by clearing its containing object, but the
+             requested read must still fit within the field itself. *)
+          Option.map (fun deps -> constant_count span, deps)
+            (count_fits_capacity numerical_zero requested (constant_count leaf))
+       | _ -> Some (requested, []) in
      let permission = match guarded_buffer_origin poq#env v with
        | Some (call, _, (XBufferOnReturn (op, bound, _, _) as predicate)) ->
           Option.map (fun guard -> guard, [PostAssumption (call#get_callee.vid, predicate)])
@@ -1015,19 +1027,19 @@ let prove_allocated_bytes (poq: po_query_int) ctxt address count =
             syms <> [] && List.for_all (fun s ->
                 s#getBaseName = "allocated-live" && s#getAttributes = []) syms
          | _ -> false) facts in
-     (match permission, live, allocation_count_facts poq capacity with
-      | Some (origins, assumptions), Some live, Some capacity_facts ->
+     (match permission, live, allocation_count_facts poq capacity, range with
+      | Some (origins, assumptions), Some live, Some capacity_facts, Some (width, leaf_deps) ->
          let variable = allocated_byte_range_variable poq#env (allocation_context poq#env v) in
          List.find_map (fun (inv: invariant_int) -> match inv#get_fact with
              | NonRelationalFact (var, FInitializedSet syms) when var#equal variable && syms <> [] ->
                 let covers s =
                   let check start count =
-                    match count.count_lower with
-                    | Some (lower, deps) when start#geq numerical_zero && first#geq start
-                                              && (first#add width)#leq (start#add lower) ->
+                    if start#lt numerical_zero || first#lt start then None else
+                    match count_fits_capacity (first#sub start) width count with
+                    | Some deps ->
                        Option.map (fun bounds -> deps @ bounds)
                          (count_fits_capacity start count capacity_facts)
-                    | _ -> None in
+                    | None -> None in
                   try match s#getBaseName, s#getAttributes with
                   | "allocated-memset-bytes", [start; count] ->
                      check (mkNumericalFromString start) (constant_count (mkNumericalFromString count))
@@ -1040,7 +1052,7 @@ let prove_allocated_bytes (poq: po_query_int) ctxt address count =
                   with Failure _ | Invalid_argument _ | CCHUtilities.CCHFailure _ -> None in
                 let coverage = List.filter_map covers syms in
                 if List.length coverage <> List.length syms then None else
-                let bounds = List.concat coverage in
+                let bounds = leaf_deps @ List.concat coverage in
                 let assumptions =
                   if bounds = [] then assumptions else assumptions @ count_summary_dependencies poq in
                 Some (DEnvC (inv#index :: live#index :: (origins @ !aliases @ bounds), assumptions))
@@ -1219,9 +1231,12 @@ let prove_initialized_range poq ctxt address length =
       | Some n -> initialized_local_bytes ~start poq ctxt lv n
       | _ -> None)
   | _ ->
-     (match exact_local_length poq#env (context_local_value poq ctxt) length with
-      | Some (XConst (IntConst n)) -> prove_allocated_bytes poq ctxt address n
-      | _ -> None)
+     let requested = match literal_value poq length with
+       | Some (XConst (IntConst n)) when n#gt numerical_zero -> Some (constant_count n)
+       | _ when Option.is_some (unsigned_count_kind poq#env length) ->
+          count_facts_at poq ctxt length
+       | _ -> None in
+     Option.bind requested (prove_allocated_bytes poq ctxt address)
 
 let memcpy_call poq sequence =
   let origin = poq#env#get_byte_sequence_origin sequence in
@@ -1255,7 +1270,9 @@ let prove_memcpy_read poq sequence (read: lval) =
                   | Some start, Some width when (start#add width)#leq n ->
                      (let source_bytes = match addressed_source_at poq call#get_context source with
                         | Some (slv, sstart) -> initialized_local_bytes ~start:sstart poq call#get_context slv n
-                        | _ -> prove_allocated_bytes poq call#get_context source n in
+                        | _ when n#gt numerical_zero ->
+                           prove_allocated_bytes poq call#get_context source (constant_count n)
+                        | _ -> None in
                       match source_bytes with
                       | Some deps -> Some (deps,
                           "memcpy source bytes initialized at call; copied "
