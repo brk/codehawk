@@ -143,28 +143,7 @@ object (self)
     | _ -> None
 
   method private var_implies_safe (invindex: int) (v: variable_t) =
-    let deps = DLocal [invindex] in
-    if poq#env#is_function_return_value v then
-       let callee = poq#env#get_callvar_callee v  in
-       let msg =
-         Printf.sprintf
-           "return value from: %s is in scope by IH (checked at return)"
-           callee.vname in
-       Some (deps,msg)
-    else if poq#is_api_expression (XVar v) then
-      let msg =
-        Printf.sprintf
-          "variable: %s is an argument to the function" v#getName#getBaseName in
-       Some (deps, msg)
-    else if poq#env#is_initial_global_value v then
-       let var = poq#env#get_initial_value_variable v in
-       let msg =
-         Printf.sprintf
-           "initial value of %s is in scope by IH (checked at assignment)"
-           var#getName#getBaseName in
-       Some (deps, msg)
-    else
-      if poq#env#is_memory_address v then
+    if poq#env#is_memory_address v then
         let memref = poq#env#get_memory_reference v in
         let _ =
           poq#set_diagnostic_arg
@@ -265,3 +244,8 @@ let check_in_scope (poq: po_query_int) (e: exp) =
   let _ = poq#set_diagnostic_invariants 1 in
   let checker = new in_scope_checker_t poq e invs in
   checker#check_safe || checker#check_violation || checker#check_delegation
+  (* Valid memory is sufficient lifetime evidence. Reuse its explicit entry
+     premises, normal/error origins and preservation checks, including their
+     dependencies. Returning a value, storing it in a global, or passing it as
+     an argument does not itself extend the referenced object's lifetime. *)
+  || CCHPOCheckValidMem.check_valid_mem poq e

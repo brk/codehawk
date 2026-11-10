@@ -33,3 +33,7 @@ void argument_opaque(int *p) { opaque_call();if(p)*p=7; }
 void argument_freed(int *p) { free(p);if(p)*p=7; }
 void argument_good_caller(void) { int x;argument_use(&x); }
 void argument_bad_caller(void) { argument_use((int *)(uintptr_t)1); }
+int *global_pointer;
+void global_pointer_use(void) { if(global_pointer)*global_pointer=7; }
+struct pointer_box { int *p; } global_box;
+void global_field_use(void) { if(global_box.p)*global_box.p=7; }

@@ -833,12 +833,6 @@ let check_ppo_validity
                       NoOffset))) ->
      make ("library variable " ^ vname ^ " is in scope")
 
-  | PInScope (Lval (Var (vname, vid), _))
-       when vid > 0
-            && TR.tfold_default
-                 (fun vinfo -> vinfo.vglob) false (get_varinfo vid) ->
-     make ("variable " ^ vname ^ " is global")
-
   | PInScope (AddrOf (Var (vname, vid),_))
     | PInScope (StartOf (Var (vname,vid),_)) when vid > 0 ->
      TR.tfold

@@ -15,7 +15,7 @@ let () =
   for _round = 2 to 5 do ignore (CCHGenerateAndCheck.generate_and_check_process_file domains) done;
   let checks name =
     let xs = List.filter (fun po -> match po#get_predicate with
-      | PValidMem _ -> true | _ -> false)
+      | PValidMem _ | PInScope _ -> true | _ -> false)
       (proof_scaffolding#get_proof_obligations name) in
     if xs = [] then failwith (name ^ ": missing valid-memory check"); xs in
   let conditional po = match po#get_dependencies with
@@ -25,7 +25,7 @@ let () =
     failwith (name ^ ": unsupported origin proved valid")) (checks name))
     ["opaque_use"; "opaque_readonly"; "integer_pointer"; "integer_return_use";
      "valid_opaque"; "error_use"; "new_only_use"; "heap_only_use"; "argument_opaque";
-     "argument_bad_caller"];
+     "argument_bad_caller"; "global_pointer_use"; "global_field_use"];
   List.iter (fun name -> List.iter (fun po ->
     let assumptions = conditional po in
     if not (List.exists (function PostAssumption (_, XValidMem ReturnValue) -> true

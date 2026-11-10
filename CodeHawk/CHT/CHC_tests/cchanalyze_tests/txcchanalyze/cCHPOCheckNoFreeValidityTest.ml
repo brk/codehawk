@@ -15,7 +15,7 @@ let () =
   for _round = 2 to 5 do ignore (CCHGenerateAndCheck.generate_and_check_process_file domains) done;
   let checks name =
     let xs = List.filter (fun po -> match po#get_predicate with
-      | PValidMem _ -> true | _ -> false)
+      | PValidMem _ | PInScope _ -> true | _ -> false)
       (proof_scaffolding#get_proof_obligations name) in
     if xs = [] then failwith (name ^ ": missing valid-memory check"); xs in
   List.iter (fun name -> List.iter (fun po -> if po#is_safe then
