@@ -1,0 +1,193 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="local_setters">
+    <functions>
+      <function name="acquire">
+        <parameters>
+          <par name="out" nr="1" />
+          <par name="size" nr="2" />
+        </parameters>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <initialized-on-return op="ge" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+          <post>
+            <math>
+              <apply>
+                <buffer-on-return op="ge" value="0" />
+                <apply>
+                  <addressed-value />
+                  <ci>out</ci>
+                </apply>
+                <ci>size</ci>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="require_bytes">
+        <parameters>
+          <par name="pointer" nr="1" />
+          <par name="count" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>pointer</ci>
+                <apply>
+                  <byte-size />
+                  <ci>count</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="get_pointer">
+        <parameters>
+          <par name="state" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="address" />
+                  </addressed-value>
+                  <ci>state</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <eq />
+                <return />
+                <apply>
+                  <addressed-value>
+                    <field name="address" />
+                  </addressed-value>
+                  <ci>state</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="get_capacity">
+        <parameters>
+          <par name="state" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>state</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <eq />
+                <return />
+                <apply>
+                  <addressed-value>
+                    <field name="capacity" />
+                  </addressed-value>
+                  <ci>state</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+      <function name="get_content">
+        <parameters>
+          <par name="state" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized />
+                <apply>
+                  <addressed-value>
+                    <field name="content" />
+                  </addressed-value>
+                  <ci>state</ci>
+                </apply>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <eq />
+                <return />
+                <apply>
+                  <addressed-value>
+                    <field name="content" />
+                  </addressed-value>
+                  <ci>state</ci>
+                </apply>
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

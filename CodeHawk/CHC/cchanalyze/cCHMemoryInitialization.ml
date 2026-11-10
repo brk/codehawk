@@ -278,11 +278,142 @@ let local_byte_range_variables (env: c_environment_int) =
   List.map (local_byte_range_variable env) env#get_fdecls#get_locals
   @ allocated_byte_range_variables env
 
+type setter_value_t =
+  | SetterArgument of int
+  | SetterLiteral of exp
+
+(* Only a same-translation-unit static definition can establish the setter's
+   complete behavior here. This fragment writes ordinary fields of its first
+   formal from by-value scalar arguments or integer literals, then returns. *)
+let descriptor_setters :
+    (int, (int * typ list * (offset * setter_value_t) list) option) Hashtbl.t =
+  Hashtbl.create 17
+
+let static_definitions = Hashtbl.create 17
+
+let reset_descriptor_setters file =
+  Hashtbl.clear descriptor_setters;
+  Hashtbl.clear static_definitions;
+  List.iter (function
+      | GFun (vi, _) when vi.vstorage = Static -> Hashtbl.replace static_definitions vi.vid ()
+      | _ -> ()) file.globals
+
+let scalar_field_type t =
+  let t = fenv#get_type_unrolled t in
+  let qualifiers = List.for_all (function Attr ("const", []) -> true | _ -> false) in
+  match t with
+     | TInt (kind, attrs) -> kind <> IBool && qualifiers attrs
+     | TPtr (_, attrs) -> qualifiers attrs
+     | _ -> false
+
+let same_setter_type a b =
+  let a = fenv#get_type_unrolled a and b = fenv#get_type_unrolled b in
+  scalar_field_type a && scalar_field_type b
+  && match a, b with
+     | TInt (i, _), TInt (j, _) -> i = j
+     | TPtr _, TPtr _ -> typ_compare a b = 0
+     | _ -> false
+
+let get_descriptor_setter name vid =
+  match Hashtbl.find_opt descriptor_setters vid with
+  | Some result -> result
+  | _ ->
+     let result =
+       match fenv#get_globalvar vid with
+       | Ok vi when vi.vname = name && vi.vstorage = Static
+                    && vi.vattr = []
+                    && Hashtbl.mem static_definitions vid
+                    && not (CCHFileContract.file_contract#has_function_contract name) ->
+          (match fenv#get_type_unrolled vi.vtype with
+           | TFun (TVoid _, Some ((_, TPtr (obj, _), _) :: _), false, _) ->
+              (match fenv#get_type_unrolled obj with
+               | TComp (key, []) when (fenv#get_comp key).cstruct && (fenv#get_comp key).cattr = [] ->
+                  let f = CCHPreFileIO.read_function_semantics name in
+                  let formals = List.sort (fun a b -> Int.compare a.vparam b.vparam)
+                      f.sdecls#get_formals in
+                  (match formals with
+                   | dst :: formals when dst.vparam = 1 && f.svar.vid = vid && f.sdecls#get_locals = []
+                         && List.for_all (fun v -> v.vattr = [] && scalar_field_type v.vtype) formals ->
+                      let indexed = List.mapi (fun i v -> i, v) formals in
+                      let field offset =
+                        match offset with
+                        | Field ((member, k), NoOffset) when key = k ->
+                           List.find_opt (fun f -> f.fname = member && f.fbitfield = None
+                               && f.fattr = [] && scalar_field_type f.ftype) (fenv#get_comp key).cfields
+                        | _ -> None in
+                      let value t rhs =
+                        match rhs with
+                        | Lval (Var (_, id), NoOffset) ->
+                           List.find_map (fun (i, v) ->
+                               if v.vid = id && v.vattr = [] && same_setter_type v.vtype t
+                               then Some (SetterArgument i) else None) indexed
+                        | _ ->
+                           let query = object method fenv = f.sdecls end in
+                           (match fenv#get_type_unrolled t, literal_value query rhs with
+                            | TInt _, Some (XConst (IntConst n)) ->
+                               let range = range_of_type f.sdecls t in
+                               if n#geq range#min && n#leq range#max
+                               then Some (SetterLiteral rhs) else None
+                            | _ -> None) in
+                      let instruction = function
+                        | Set ((Mem (Lval (Var (_, id), NoOffset)), off), rhs, _) when id = dst.vid ->
+                           Option.bind (field off) (fun f ->
+                               Option.map (fun v -> off, v) (value f.ftype rhs))
+                        | _ -> None in
+                      let rec writes acc = function
+                        | [] | [{skind = Return (None, _); _}] -> Some (List.rev acc)
+                        | {skind = Instr ins; _} :: rest ->
+                           let fields = List.filter_map instruction ins in
+                           if List.length fields = List.length ins
+                           then writes (List.rev_append fields acc) rest else None
+                        | _ -> None in
+                      (match writes [] f.sbody.bstmts with
+                       | Some (_ :: _ as fields) ->
+                          Some (key, List.map (fun v -> v.vtype) formals, fields)
+                       | _ -> None)
+                   | _ -> None)
+               | _ -> None)
+           | _ -> None)
+       | _ -> None in
+     Hashtbl.replace descriptor_setters vid result;
+     result
+
+(* Scalar actuals refer only to separate ordinary variables or literals. They
+   can be substituted without reevaluating an alias after the first store. *)
+let local_setter_assignments fdecls name vid args =
+  match args with
+  | AddrOf (Var (_, id), NoOffset) :: values ->
+     (match fdecls#get_varinfo_by_vid id, get_descriptor_setter name vid with
+      | Ok local, Some (key, types, fields)
+           when not local.vglob && local.vparam = 0
+                && local.vstorage <> Static && local.vattr = [] ->
+         (match fenv#get_type_unrolled local.vtype with
+          | TComp (k, []) when k = key ->
+             let query = object method fenv = fdecls end in
+             let scalar typ = function
+               | Lval (Var (_, id), NoOffset) ->
+                  (match fdecls#get_varinfo_by_vid id with
+                   | Ok vi -> not vi.vglob && vi.vattr = [] && same_setter_type vi.vtype typ
+                   | _ -> false)
+               | e ->
+                  (match type_of_exp fdecls e, literal_value query e with
+                   | Ok t, Some (XConst (IntConst _)) -> same_setter_type t typ
+                   | _ -> false) in
+             if List.length types <> List.length values || not (List.for_all2 scalar types values)
+             then None else
+               let assignments = List.map (fun (off, value) ->
+                   let e = match value with
+                     | SetterArgument i -> List.nth values i
+                     | SetterLiteral e -> e in
+                   ((Var (local.vname, id), off), e)) fields in
+               Some (id, assignments)
+          | _ -> None)
+      | _ -> None)
+  | _ -> None
+
 (* A local descriptor address may occur only as the complete argument of a
-   modeled read-only field getter. This syntactic escape check is shared with
-   guard transport: ordinary field assignments do not make an unescaped
-   descriptor into an aliased return-status slot. *)
-let readonly_descriptor_address_uses body vid =
+   modeled read-only field getter or a source-checked setter. *)
+let descriptor_address_is_confined body vid =
   let contracts = CCHFileContract.file_contract in
   let getter_argument name index =
        if not (contracts#has_function_contract name) then false else
@@ -314,11 +445,16 @@ let readonly_descriptor_address_uses body vid =
          | Instr ins -> List.for_all (function
              | Set (lv, e, _) -> lvalue lv && expression false e
              | Call (lhs, fn, args, _) ->
+                let local_setter = match lhs, fn, args with
+                  | None, Lval (Var (name, fnid), NoOffset), AddrOf (Var (_, id), NoOffset) :: _
+                       when id = vid ->
+                     Option.is_some (local_setter_assignments body.sdecls name fnid args)
+                  | _ -> false in
                 (match lhs with None -> true | Some lv -> lvalue lv)
                 && expression false fn
                 && List.for_all (fun (i, arg) ->
                     let allowed = match fn with
-                      | Lval (Var (name, _), NoOffset) -> getter_argument name (i + 1)
+                      | Lval (Var (name, _), NoOffset) -> (i = 0 && local_setter) || getter_argument name (i + 1)
                       | _ -> false in
                     expression allowed arg) (List.mapi (fun i x -> i, x) args)
              | _ -> false) ins
@@ -326,6 +462,15 @@ let readonly_descriptor_address_uses body vid =
          | If (e, a, b, _) -> expression false e && block a && block b
          | Block b -> block b | _ -> false) b.bstmts in
   block body.sbody
+
+let descriptor_setter_assignments env fn args =
+  match fn, Hashtbl.find_opt local_function_bodies env#get_functionname with
+  | Lval (Var (name, vid), NoOffset), Some body
+       when Hashtbl.find_opt local_alias_enabled env#get_functionname = Some true ->
+     (match local_setter_assignments body.sdecls name vid args with
+      | Some (id, fields) when descriptor_address_is_confined body id -> Some fields
+      | _ -> None)
+  | _ -> None
 
 let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
   Hashtbl.replace local_function_bodies env#get_functionname f;
@@ -413,7 +558,7 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
         | Ok vi -> not vi.vglob && ordinary vi.vtype off
                    && (not vi.vaddrof
                        || (off <> NoOffset && vi.vattr = []
-                           && readonly_descriptor_address_uses f vi.vid))
+                           && descriptor_address_is_confined f vi.vid))
         | _ -> false)
     | _ -> false in
   let assign lv source value = match type_of_lval f.sdecls lv with
@@ -663,10 +808,8 @@ let safe_alias_slot (env: c_environment_int) lv =
          | _ -> false)
      | _ -> false
 
-(* A descriptor's address may be exposed solely to a modeled read-only getter
-   returning an ordinary pointer or integer field. Do not reuse numeric field facts for
-   arbitrary escaped descriptors: byte writes, root-alias returns, opaque
-   calls and union views can otherwise leave stale overlapping values. *)
+(* Reuse exact numeric field facts only while the descriptor's address is
+   confined to modeled read-only getters and source-checked setters. *)
 let readonly_getter_field (env: c_environment_int) argument soff =
   let contracts = CCHFileContract.file_contract in
   let rec root = function
@@ -678,7 +821,7 @@ let readonly_getter_field (env: c_environment_int) argument soff =
       Hashtbl.find_opt local_alias_enabled env#get_functionname = Some true
       && List.for_all (fun g -> g#get_value = None) contracts#get_globalvar_contracts ->
      (match env#get_varinfo vid with
-      | Ok vi when function_scope_local vi && readonly_descriptor_address_uses body vid ->
+      | Ok vi when function_scope_local vi && descriptor_address_is_confined body vid ->
          let rec select typ off =
            let typ = fenv#get_type_unrolled typ in
            if is_volatile_type typ then None else match off with

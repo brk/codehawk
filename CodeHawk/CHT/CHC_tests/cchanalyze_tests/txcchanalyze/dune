@@ -1,5 +1,6 @@
 (tests
   (names
+        cCHPOCheckLocalSettersTest
         cCHPOCheckParameterRangesTest
         cCHPOCheckParameterRegionsTest
         cCHPOCheckPooledGettersTest
@@ -34,6 +35,8 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PLocalSetters/local_setters.cch.tar.gz
+        testinputs/PLocalSetters/local_setters_c.xml
         testinputs/PParameterRanges/parameter_ranges.cch.tar.gz
         testinputs/PParameterRanges/parameter_ranges_c.xml
         testinputs/PParameterRegions/parameter_regions.cch.tar.gz

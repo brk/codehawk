@@ -357,6 +357,7 @@ let generate_and_check_process_file (domains: string list) =
     let _ = read_cfile_assignment_dictionary () in
     let _ = read_cfile_contract () in
     let _ = file_contract#collect_file_attributes in
+    let _ = CCHMemoryInitialization.reset_descriptor_setters cfile in
     let _ = log_info "Read file-level xml files [%s:%d]" __FILE__ __LINE__ in
     let _ = pr_timing [STR cfilename; STR ": finished loading files"] in
     let functions = fenv#get_application_functions in

@@ -341,6 +341,7 @@ let invariants_process_file domains =
     let _ = read_cfile_dictionary () in
     let cfile = read_cfile () in
     let _ = fenv#initialize cfile in
+    let _ = CCHMemoryInitialization.reset_descriptor_setters cfile in
     let _ = read_cfile_context () in
     let _ = read_cfile_predicate_dictionary () in
     let _ = read_cfile_interface_dictionary () in

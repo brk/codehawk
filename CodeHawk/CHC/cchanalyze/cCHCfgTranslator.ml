@@ -458,7 +458,15 @@ object (self)
     | Call (ret, f, args, loc) ->
       begin
 	env#set_current_location loc;
-        TR.tfold
+        let setter = match ret with
+          | None -> CCHMemoryInitialization.descriptor_setter_assignments env f args
+          | Some _ -> None in
+        match setter with
+        | Some fields ->
+           let writes = List.concat_map (fun (lhs, rhs) ->
+               assignment_translator#translate context loc lhs rhs) fields in
+           make_c_cmd_block (ops @ writes)
+        | None -> TR.tfold
           ~ok:(fun callcmds -> make_c_cmd_block (ops @ callcmds))
           ~error:(fun e ->
             begin
