@@ -1,5 +1,6 @@
 (tests
   (names
+        cCHPOCheckParameterRegionsTest
         cCHPOCheckPooledGettersTest
         cCHPOCheckScopePermissionsTest
         cCHPOCheckScopeLegacyTest
@@ -32,6 +33,8 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PParameterRegions/parameter_regions.cch.tar.gz
+        testinputs/PParameterRegions/parameter_regions_c.xml
         testinputs/PPooledGetters/pooled_getters.cch.tar.gz
         testinputs/PPooledGetters/pooled_getters_c.xml
         testinputs/PScopePermissions/scope_permissions.cch.tar.gz

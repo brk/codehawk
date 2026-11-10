@@ -147,11 +147,37 @@ let local_function_bodies : (string, fundec) Hashtbl.t = Hashtbl.create 17
 let guarded_outputs_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
 let guarded_output_contexts : (string, (int, bool) Hashtbl.t) Hashtbl.t =
   Hashtbl.create 17
+let exact_count_contexts : (string, (int, bool) Hashtbl.t) Hashtbl.t =
+  Hashtbl.create 17
+
+type byte_capacity_t =
+  | ConstantCapacity of numerical_t
+  | ArgumentCapacity of program_context_int * exp
+
+(* The domain reads actual argument values at their call contexts. A plain
+   unsigned slot with the same integral kind as the formal needs no modeled
+   argument conversion. Reject addressed, volatile and nested count slots. *)
+let unsigned_count_argument (env: c_environment_int) (call: direct_callsite_int) index =
+  if index < 1 then None else
+  match List.nth_opt call#get_arguments (index - 1),
+        fenv#get_type_unrolled call#get_callee.vtype with
+  | Some (Lval (Var (_, vid), NoOffset) as arg), TFun (_, Some formals, _, _) ->
+     (match env#get_varinfo vid, List.nth_opt formals (index - 1) with
+      | Ok vi, Some (_, formal, _) when not vi.vglob && not vi.vaddrof
+                                     && vi.vstorage <> Static && vi.vattr = [] ->
+         (match fenv#get_type_unrolled vi.vtype, fenv#get_type_unrolled formal with
+          | (TInt (actual, _) as typ), TInt (expected, _)
+               when actual = expected && actual <> IBool && is_unsigned_type actual
+                    && not (is_volatile_type typ) -> Some arg
+          | _ -> None)
+      | _ -> None)
+  | _ -> None
 
 (* A guarded output region is a value captured at one acyclic call site.
    It is not a malloc return, nor a claim of fresh/disjoint physical storage.
-   Only an actual function-scope void* output slot and literal positive byte
-   capacity are supported. Casts do not change the actual slot's C type. *)
+   It requires an actual function-scope void* output slot. Capacity is either
+   a positive constant or the by-value unsigned count at the allocation call.
+   Casts do not change the actual output slot's C type. *)
 let guarded_buffer_output (env: c_environment_int) (call: direct_callsite_int) =
   let fname = call#get_callee.vname in
   if Hashtbl.find_opt local_alias_enabled env#get_functionname <> Some true
@@ -175,11 +201,15 @@ let guarded_buffer_output (env: c_environment_int) (call: direct_callsite_int) =
   | [XBufferOnReturn (_, _, ArgAddressedValue
        (ArgValue (ParFormal n, ArgNoOffset), ArgNoOffset), size) as predicate] ->
      let capacity = match size with
-       | NumConstant n -> Some (XConst (IntConst n))
-       | ArgValue (ParFormal m, ArgNoOffset) -> Option.bind (argument m) (literal_value query)
+       | NumConstant n when n#gt numerical_zero -> Some (ConstantCapacity n)
+       | ArgValue (ParFormal m, ArgNoOffset) ->
+          (match Option.bind (argument m) (literal_value query) with
+           | Some (XConst (IntConst n)) when n#gt numerical_zero -> Some (ConstantCapacity n)
+           | _ -> Option.map (fun e -> ArgumentCapacity (call#get_context, e))
+                    (unsigned_count_argument env call m))
        | _ -> None in
      (match Option.bind (argument n) slot, capacity with
-      | Some (vi, off), Some (XConst (IntConst capacity)) when capacity#gt numerical_zero ->
+      | Some (vi, off), Some capacity ->
          let origin = env#mk_function_sideeffect_value call#get_location call#get_context
              call#get_callee (List.map (fun _ -> None) args) n vi.vtype in
          Some (vi, off, origin, capacity, predicate)
@@ -384,12 +414,12 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
        (match fenv#get_type_unrolled target with TInt _ -> status_slot lv | _ -> true)
        && conversion target source value
     | _ -> false in
-  let guarded_instruction = function
+  let instruction_checked check_expr = function
           | Set (lv, e, _) ->
-             clval lv && casts e && (match type_of_exp f.sdecls e with
+             clval lv && check_expr e && (match type_of_exp f.sdecls e with
                  | Ok source -> assign lv source (Some e) | _ -> false)
           | Call (lhs, fn, args, _) ->
-             casts fn && List.for_all casts args && (match lhs with
+             check_expr fn && List.for_all check_expr args && (match lhs with
                | None -> true
                | Some lv -> clval lv && (match type_of_exp f.sdecls fn with
                    | Ok typ -> (match fenv#get_type_unrolled typ with
@@ -398,52 +428,81 @@ let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
                        | _ -> false)
                    | _ -> false))
           | _ -> false in
+  (* Numeric translation can treat C arithmetic as mathematical arithmetic.
+     Restrict captured counts and their preceding guards to comparisons, slot
+     copies and compile-time expressions with a checked representation. *)
+  let rec count_expr e =
+    match literal_value query e with
+    | Some (XConst (IntConst _)) -> true
+    | _ -> match e with
+      | BinOp ((Lt | Le | Gt | Ge | Eq | Ne | LAnd | LOr | PlusPI | MinusPI | IndexPI), a, b, _) ->
+         count_expr a && count_expr b
+      | CastE (_, a) | UnOp (LNot, a, _) -> count_expr a
+      | Lval lv | AddrOf lv | StartOf lv -> count_lval lv
+      | Const _ | SizeOf _ | SizeOfE _ | AlignOf _ | AlignOfE _ -> true
+      | _ -> false
+  and count_lval (host, off) =
+    (match host with Var _ -> true | Mem e -> count_expr e) && count_offset off
+  and count_offset = function
+    | NoOffset -> true
+    | Field (_, rest) -> count_offset rest
+    | Index (e, rest) -> count_expr e && count_offset rest in
   (* An unsupported conversion invalidates this path, not a sibling path that
      cannot reach the read. Return has no fallthrough. Join the safety of all
      continuing predecessors; never recover safety after a bad conversion.
      Keep alias/control-flow exclusions global. The contexts mirror the
      supported structured translation in cCHCfgTranslator. *)
-  let contexts = Hashtbl.create 17 in
-  let record ctxt safe =
-    Hashtbl.replace contexts ctxt#get_cfg_context#index safe in
-  let join a b = match a, b with
-    | None, x | x, None -> x
-    | Some a, Some b -> Some (a && b) in
-  let rec guarded_block ctxt state b =
-    List.fold_left (fun state s -> guarded_stmt (ctxt#add_stmt s.sid) state s)
-      state b.bstmts
-  and guarded_stmt ctxt state s =
-    let safe = state = Some true in
-    match s.skind with
-    | Instr ins ->
-       let result = List.fold_left (fun (i, state) ins ->
-           let next = state = Some true && guarded_instruction ins in
-           record (ctxt#add_instr i) next;
-           (i + 1, if state = None then None else Some next)) (0, state) ins in
-       snd result
-    | Return (e, _) ->
-       record ctxt#add_return
-         (safe && (match e with Some e -> casts e | _ -> true));
-       None
-    | If (e, a, b, _) ->
-       let next = safe && casts e in
-       record ctxt#add_if_expr next;
-       let incoming = if state = None then None else Some next in
-       join (guarded_block ctxt#add_if_then incoming a)
-         (guarded_block ctxt#add_if_else incoming b)
-    | Block b -> guarded_block ctxt state b
-    | _ -> Some false in
-  ignore (guarded_block (CCHContext.mk_program_context ()) (Some true) f.sbody);
-  Hashtbl.replace guarded_output_contexts env#get_functionname contexts;
-  Hashtbl.replace local_range_enabled env#get_functionname (block f.sbody);
-  Hashtbl.replace guarded_outputs_enabled env#get_functionname
-    (List.exists (function Attr ("codehawk_nested_scope_metadata_v1", []) -> true | _ -> false)
-       f.sbody.battrs && block f.sbody && aliases f.sbody);
-  Hashtbl.replace local_alias_enabled env#get_functionname
-    (List.exists (function
-         | Attr ("codehawk_nested_scope_metadata_v1", []) -> true
-         | _ -> false) f.sbody.battrs
-     && block f.sbody && aliases f.sbody)
+  let checked_contexts check_expr check_lval =
+    let contexts = Hashtbl.create 17 in
+    let record ctxt safe =
+      Hashtbl.replace contexts ctxt#get_cfg_context#index safe in
+    let join a b = match a, b with
+      | None, x | x, None -> x
+      | Some a, Some b -> Some (a && b) in
+    let rec guarded_block ctxt state b =
+      List.fold_left (fun state s -> guarded_stmt (ctxt#add_stmt s.sid) state s)
+        state b.bstmts
+    and guarded_stmt ctxt state s =
+      let safe = state = Some true in
+      match s.skind with
+      | Instr ins ->
+         let result = List.fold_left (fun (i, state) ins ->
+             let lhs_ok = match ins with
+               | Set (lv, _, _) | Call (Some lv, _, _, _) -> check_lval lv
+               | _ -> true in
+             let next = state = Some true && lhs_ok && instruction_checked check_expr ins in
+             record (ctxt#add_instr i) next;
+             (i + 1, if state = None then None else Some next)) (0, state) ins in
+         snd result
+      | Return (e, _) ->
+         record ctxt#add_return
+           (safe && (match e with Some e -> check_expr e | _ -> true));
+         None
+      | If (e, a, b, _) ->
+         let next = safe && check_expr e in
+         record ctxt#add_if_expr next;
+         let incoming = if state = None then None else Some next in
+         join (guarded_block ctxt#add_if_then incoming a)
+           (guarded_block ctxt#add_if_else incoming b)
+      | Block b -> guarded_block ctxt state b
+      | _ -> Some false in
+    ignore (guarded_block (CCHContext.mk_program_context ()) (Some true) f.sbody);
+    contexts in
+  let structured = block f.sbody in
+  let certified = structured && aliases f.sbody
+    && List.exists (function Attr ("codehawk_nested_scope_metadata_v1", []) -> true | _ -> false)
+         f.sbody.battrs in
+  Hashtbl.replace local_range_enabled env#get_functionname structured;
+  Hashtbl.replace guarded_outputs_enabled env#get_functionname certified;
+  Hashtbl.replace local_alias_enabled env#get_functionname certified;
+  if certified then begin
+    Hashtbl.replace guarded_output_contexts env#get_functionname (checked_contexts casts clval);
+    Hashtbl.replace exact_count_contexts env#get_functionname
+      (checked_contexts (fun e -> casts e && count_expr e) count_lval)
+  end else begin
+    Hashtbl.remove guarded_output_contexts env#get_functionname;
+    Hashtbl.remove exact_count_contexts env#get_functionname
+  end
 
 (* Absence of a nested attribute is meaningful only with the parser's scope
    metadata certificate above.  All nested aliases remain unsupported, even
@@ -473,13 +532,16 @@ let stack_address_lifetime_known (env: c_environment_int) vi =
 let guarded_output_initialization_enabled env =
   Hashtbl.find_opt guarded_outputs_enabled env#get_functionname = Some true
 
-let guarded_return_dependency (poq: po_query_int) ctxt callctxt callee op bound =
-  if not (guarded_output_initialization_enabled poq#env) then None else
-  if not (match Hashtbl.find_opt guarded_output_contexts poq#env#get_functionname with
+let checked_context table env ctxt =
+  guarded_output_initialization_enabled env
+  && (match Hashtbl.find_opt table env#get_functionname with
       | Some contexts -> Hashtbl.find_opt contexts ctxt#get_cfg_context#index = Some true
-      | _ -> false) then None else
-  if not (List.for_all (fun g -> g#get_value = None)
-      CCHFileContract.file_contract#get_globalvar_contracts) then None else
+      | _ -> false)
+  && List.for_all (fun g -> g#get_value = None)
+      CCHFileContract.file_contract#get_globalvar_contracts
+
+let guarded_return_dependency (poq: po_query_int) ctxt callctxt callee op bound =
+  if not (checked_context guarded_output_contexts poq#env ctxt) then None else
   let facts = poq#get_context_invariants ctxt in
   let same_return v =
     poq#env#is_function_return_value v
@@ -729,8 +791,7 @@ let context_local_value (poq: po_query_int) ctxt = function
   | _ -> None
 
 (* Supported allocation origins are captured only within acyclic functions.
-   Literal capacity belongs to the original malloc call or guarded output
-   contract, never a later descriptor. Zero/dynamic sizes remain unsupported. *)
+   Capacity belongs to the original malloc or guarded output call. *)
 let allocated_origin (env: c_environment_int) value =
   let root = match value with
     | XVar v when env#is_function_return_value v -> Some v
@@ -750,7 +811,14 @@ let allocated_origin (env: c_environment_int) value =
        let call = proof_scaffolding#get_direct_callsite env#get_functionname ctxt in
        if call#get_header = "lib:stdlib" && call#get_callee.vname = "malloc" then
          (match env#get_callvar_args v with
-          | [Some (XConst (IntConst n))] when n#gt numerical_zero -> Some (v, n)
+          | [Some (XConst (IntConst n))] when n#gt numerical_zero ->
+             let query = object method fenv = env#get_fdecls end in
+             (match call#get_arguments with
+              | [arg] when (match literal_value query arg with
+                      | Some (XConst (IntConst size)) -> size#equal n
+                      | _ -> false) || checked_context exact_count_contexts env ctxt ->
+                 Some (v, ConstantCapacity n)
+              | _ -> None)
           | _ -> None)
        else None
      else None
@@ -791,19 +859,112 @@ let resolve_allocated_region (env: c_environment_int) get_value address =
     | _ -> None in
   resolve address
 
-let memset_allocated_byte_range (env: c_environment_int) get_value args =
+let memset_allocated_byte_range (env: c_environment_int) ctxt get_value args =
+  let marker v name atts =
+    [CCHCommand.make_c_cmd (CHLanguage.ASSIGN_SYM
+         (allocated_byte_range_variable env (allocation_context env v),
+          CHLanguage.SYM (new CHLanguage.symbol_t ~atts name)))] in
   match args with
   | [dest; _; len] ->
-     (match resolve_allocated_region env get_value dest, exact_local_length env get_value len with
-      | Some (v, capacity, first, None, None), Some (XConst (IntConst count))
-           when first#geq numerical_zero && count#gt numerical_zero
-                && (first#add count)#leq capacity ->
-         let marker = new CHLanguage.symbol_t
-             ~atts:[first#toString; count#toString] "allocated-memset-bytes" in
-         [CCHCommand.make_c_cmd (CHLanguage.ASSIGN_SYM
-             (allocated_byte_range_variable env (allocation_context env v), CHLanguage.SYM marker))]
+     (match resolve_allocated_region env get_value dest with
+      | Some (v, capacity, first, None, None) when first#geq numerical_zero ->
+         let query = object method fenv = env#get_fdecls end in
+         let literal = literal_value query len in
+         let exact = match literal with
+           | Some _ -> literal
+           | _ when checked_context exact_count_contexts env ctxt -> exact_local_length env get_value len
+           | _ -> None in
+         (match exact with
+          | Some (XConst (IntConst count)) when count#gt numerical_zero ->
+             (match capacity with
+              | ConstantCapacity n when (first#add count)#gt n -> []
+              | _ -> marker v "allocated-memset-bytes" [first#toString; count#toString])
+          | _ ->
+             let call = proof_scaffolding#get_direct_callsite env#get_functionname ctxt in
+             if Option.is_none (unsigned_count_argument env call 3) then [] else
+             marker v "allocated-memset-call"
+               [first#toString; string_of_int (CCHContext.ccontexts#index_context ctxt)])
       | _ -> [])
   | _ -> []
+
+type count_facts_t = {
+    exact_count: (xpr_t * int list) option;
+    count_lower: (numerical_t * int list) option;
+    count_upper: (numerical_t * int list) option;
+  }
+
+let constant_count n = {
+    exact_count = Some (XConst (IntConst n), []);
+    count_lower = Some (n, []);
+    count_upper = Some (n, []);
+  }
+
+let count_facts_at (poq: po_query_int) ctxt e =
+  if not (checked_context exact_count_contexts poq#env ctxt) then None else
+  match e with
+  | Lval (Var (_, vid), NoOffset) ->
+     (match poq#env#get_varinfo vid with
+      | Error _ -> None
+      | Ok vi ->
+         let slot = poq#env#mk_program_var vi NoOffset CHLanguage.NUM_VAR_TYPE in
+         let invariants = poq#get_context_invariants ctxt in
+         let facts = List.filter (fun (inv: invariant_int) -> inv#applies_to_var slot) invariants in
+         let exact_count = List.find_map (fun inv ->
+             match inv#expr with
+             | Some (XConst (IntConst _) as x) -> Some (x, [inv#index])
+             | Some (XVar v as x) when not v#isTmp && poq#env#is_initial_parameter_value v ->
+                let (param, offset) = poq#env#get_initial_parameter_vinfo v in
+                if param.vparam > 0 && offset = NoOffset then Some (x, [inv#index]) else None
+             | _ -> None) facts in
+         let bound get better =
+           let choose deps best inv =
+             match get inv, best with
+             | Some n, Some (previous, _) when not (better n previous) -> best
+             | Some n, _ -> Some (n, inv#index :: deps)
+             | _ -> best in
+           let direct = List.fold_left (choose []) None facts in
+           match exact_count with
+           | Some (XConst (IntConst n), deps) -> Some (n, deps)
+           | Some (XVar v, deps) ->
+              List.fold_left (fun best (inv: invariant_int) ->
+                  if inv#applies_to_var v then choose deps best inv else best) direct invariants
+           | _ -> direct in
+         Some {exact_count;
+               count_lower = bound (fun inv -> inv#lower_bound) (fun a b -> a#gt b);
+               count_upper = bound (fun inv -> inv#upper_bound) (fun a b -> a#lt b)})
+  | _ -> None
+
+let allocation_count_facts poq = function
+  | ConstantCapacity n -> Some (constant_count n)
+  | ArgumentCapacity (ctxt, e) -> count_facts_at poq ctxt e
+
+(* Compare historical call arguments. Equality is usable only for constants or
+   the same immutable entry value. Independent bounds remain useful when the
+   caller clears a shorter prefix. A later assignment cannot enlarge either
+   the captured allocation or the recorded clear. *)
+let count_fits_capacity first count capacity =
+  let same_value = function
+    | XConst (IntConst a), XConst (IntConst b) -> a#equal b
+    | XVar a, XVar b -> a#equal b
+    | _ -> false in
+  match first#equal numerical_zero, count.exact_count, capacity.exact_count with
+  | true, Some (a, ad), Some (b, bd) when same_value (a, b) -> Some (ad @ bd)
+  | _ ->
+     (match count.count_upper, capacity.count_lower with
+      | Some (count, cd), Some (capacity, bd) when (first#add count)#leq capacity -> Some (cd @ bd)
+      | _ -> None)
+
+let count_summary_dependencies (poq: po_query_int) =
+  let current = poq#get_proof_obligation#get_context#get_cfg_context#index in
+  List.concat_map (fun call ->
+      if call#get_context#get_cfg_context#index = current then [] else
+        let callee = call#get_callee in
+        let predicates = match poq#get_summary callee.vname with
+          | Some summary ->
+             summary.fs_postconditions @ summary.fs_error_postconditions @ summary.fs_sideeffects
+          | None -> call#get_postassumes in
+        List.map (fun (predicate, _) -> PostAssumption (callee.vid, predicate)) predicates)
+    poq#get_function_direct_callsites
 
 let prove_allocated_bytes (poq: po_query_int) ctxt address count =
   let facts = poq#get_context_invariants ctxt in
@@ -825,7 +986,6 @@ let prove_allocated_bytes (poq: po_query_int) ctxt address count =
        when first#geq numerical_zero && count#gt numerical_zero
             && (match leaf with Some width -> count#leq width | _ -> true) ->
      let width = match span with Some n -> n | _ -> count in
-     if (first#add width)#gt capacity then None else
      let permission = match guarded_buffer_origin poq#env v with
        | Some (call, _, (XBufferOnReturn (op, bound, _, _) as predicate)) ->
           Option.map (fun guard -> guard, [PostAssumption (call#get_callee.vid, predicate)])
@@ -844,8 +1004,8 @@ let prove_allocated_bytes (poq: po_query_int) ctxt address count =
           let pcs, _ = poq#get_postconditions v in
           if origins = [] || not (List.exists (fun (p, _) -> p = XNewMemory ReturnValue) pcs)
           then None else
-          (match poq#get_function_return_value_buffer_size v with
-           | Some (assumptions, XConst (IntConst n)) when n#equal capacity ->
+          (match poq#get_function_return_value_buffer_size v, capacity with
+           | Some (assumptions, XConst (IntConst n)), ConstantCapacity cap when n#equal cap ->
               let callee = poq#env#get_callvar_callee v in
               Some (origins, PostAssumption (callee.vid, XNewMemory ReturnValue) :: assumptions)
            | _ -> None) in
@@ -855,21 +1015,35 @@ let prove_allocated_bytes (poq: po_query_int) ctxt address count =
             syms <> [] && List.for_all (fun s ->
                 s#getBaseName = "allocated-live" && s#getAttributes = []) syms
          | _ -> false) facts in
-     (match permission, live with
-      | Some (origins, assumptions), Some live ->
+     (match permission, live, allocation_count_facts poq capacity with
+      | Some (origins, assumptions), Some live, Some capacity_facts ->
          let variable = allocated_byte_range_variable poq#env (allocation_context poq#env v) in
          List.find_map (fun (inv: invariant_int) -> match inv#get_fact with
              | NonRelationalFact (var, FInitializedSet syms) when var#equal variable && syms <> [] ->
-                let covers s = match s#getBaseName, s#getAttributes with
-                  | "allocated-memset-bytes", [a; b] ->
-                     (try let a = mkNumericalFromString a and b = mkNumericalFromString b in
-                          a#geq numerical_zero && b#gt numerical_zero
-                          && (a#add b)#leq capacity && first#geq a
-                          && (first#add width)#leq (a#add b) with _ -> false)
-                  | _ -> false in
-                if List.for_all covers syms then
-                  Some (DEnvC (inv#index :: live#index :: (origins @ !aliases), assumptions))
-                else None
+                let covers s =
+                  let check start count =
+                    match count.count_lower with
+                    | Some (lower, deps) when start#geq numerical_zero && first#geq start
+                                              && (first#add width)#leq (start#add lower) ->
+                       Option.map (fun bounds -> deps @ bounds)
+                         (count_fits_capacity start count capacity_facts)
+                    | _ -> None in
+                  try match s#getBaseName, s#getAttributes with
+                  | "allocated-memset-bytes", [start; count] ->
+                     check (mkNumericalFromString start) (constant_count (mkNumericalFromString count))
+                  | "allocated-memset-call", [start; index] ->
+                     let callctxt = CCHContext.ccontexts#get_context (int_of_string index) in
+                     let call = proof_scaffolding#get_direct_callsite poq#fname callctxt in
+                     Option.bind (unsigned_count_argument poq#env call 3) (fun e ->
+                         Option.bind (count_facts_at poq callctxt e) (check (mkNumericalFromString start)))
+                  | _ -> None
+                  with Failure _ | Invalid_argument _ | CCHUtilities.CCHFailure _ -> None in
+                let coverage = List.filter_map covers syms in
+                if List.length coverage <> List.length syms then None else
+                let bounds = List.concat coverage in
+                let assumptions =
+                  if bounds = [] then assumptions else assumptions @ count_summary_dependencies poq in
+                Some (DEnvC (inv#index :: live#index :: (origins @ !aliases @ bounds), assumptions))
              | _ -> None) facts
       | _ -> None)
   | _ -> None

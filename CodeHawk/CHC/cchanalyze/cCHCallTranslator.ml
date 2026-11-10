@@ -1502,7 +1502,7 @@ object (self)
                  #get_header = "lib:string" then
            CCHMemoryInitialization.memset_local_byte_range env
              (fun e -> Some (exp_translator#translate_exp context e)) args
-           @ CCHMemoryInitialization.memset_allocated_byte_range env
+           @ CCHMemoryInitialization.memset_allocated_byte_range env context
              (fun e -> Some (exp_translator#translate_exp context e)) args
          else [] in
        Ok (callop :: clear :: (live_havoc @ sideeffect @ postconditions
