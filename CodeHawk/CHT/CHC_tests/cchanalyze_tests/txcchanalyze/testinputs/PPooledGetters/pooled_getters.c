@@ -26,3 +26,26 @@ uint32_t unguarded_getter_bad(void) { void *raw; uint32_t *p,value; Descriptor d
 typedef struct { uint32_t prefix,comparison; } Entry;
 uint32_t field_getters_good(void) { void *raw; Entry *p; uint32_t value; Descriptor d; if(acquire(&raw,16)<0)return 0; p=raw; d.pointer=raw; d.capacity=16; memset(read_pointer(&d),0,get_capacity(&d)); memcpy(&value,&p[1].comparison,4); return value; }
 uint32_t field_partial_bad(void) { void *raw; Entry *p; uint32_t value; Descriptor d; if(acquire(&raw,16)<0)return 0; p=raw; d.pointer=raw; d.capacity=12; memset(read_pointer(&d),0,get_capacity(&d)); memcpy(&value,&p[1].comparison,4); return value; }
+
+uint32_t pointer_before_size_good(void)
+{
+    START(8);
+    d.capacity = 8;
+    void *view = read_pointer(&d);
+    size_t length = get_capacity(&d);
+    memset(view, 0, length);
+    memcpy(&value, p + 1, 4);
+    return value;
+}
+
+uint32_t pointer_before_short_size_bad(void)
+{
+    START(8);
+    d.capacity = 8;
+    void *view = read_pointer(&d);
+    d.capacity = 4;
+    size_t length = get_capacity(&d);
+    memset(view, 0, length);
+    memcpy(&value, p + 1, 4);
+    return value;
+}

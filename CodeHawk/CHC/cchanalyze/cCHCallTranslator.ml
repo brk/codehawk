@@ -374,6 +374,11 @@ object (self)
                   match optbasevar with
                   | Some (XVar v) -> env#get_memory_variables_with_base v
                   | _ -> env#get_memory_variables_with_base rvar in
+                let memoryvars =
+                  match get_sideeffects env#get_functionname (Some fname) context with
+                  | [(XPreservesAllMemory, _)] ->
+                     self#retain_getter_descriptor postconditions args returntype lval memoryvars
+                  | _ -> memoryvars in
                 let _ =
                   log_diagnostics_result
                     ~tag:"abstract memory variables"
@@ -483,6 +488,36 @@ object (self)
       | Some lv -> (exp_translator#translate_lhs context lv) :: env#get_memory_variables
       | None -> env#get_memory_variables in
     [make_c_cmd (ABSTRACT_VARS vars)]
+
+  (* Changing the result slot of an exact read-only field getter cannot
+     change the distinct stack descriptor. Keep just that fixed storage;
+     the result may still invalidate memory modeled relative to its value. *)
+  method private retain_getter_descriptor postconditions args returntype lhs memory =
+    match lhs, postconditions with
+    | (Var _, NoOffset), (normal, [])
+         when CCHMemoryInitialization.safe_alias_slot env lhs ->
+       let descriptor = List.find_map (function
+           | (XRelationalExpr (Eq, ReturnValue,
+                 ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff)), _)
+             | (XRelationalExpr (Eq,
+                 ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff), ReturnValue), _)
+                when n > 0 && n <= List.length args ->
+              (match CCHMemoryInitialization.readonly_getter_result_field
+                       env (List.nth args (n - 1)) soff returntype with
+               | Some (Lval (Var (_, vid), _)) -> Some vid
+               | _ -> None)
+           | _ -> None) normal in
+       (match descriptor with
+        | Some vid ->
+           List.filter (fun v ->
+               let memref, _ = env#get_memory_variable v in
+               match memref#get_base with
+               | CStackAddress stack when env#is_local_variable stack ->
+                  let vi, _ = env#get_local_variable stack in
+                  vi.vid <> vid
+               | _ -> true) memory
+        | _ -> memory)
+    | _ -> memory
 
   method private get_external_post_value
                    (postconditions:

@@ -24,12 +24,12 @@ let () =
           && List.exists (function PostAssumption (_, XPreservesAllMemory) -> true | _ -> false) assumptions -> ()
       | _ -> failwith (CU.located_po_to_string po)) (reads name))
     ["two_getters_good"; "pointer_getter_good"; "size_getter_good";
-     "captured_getters_good"; "field_getters_good"];
+     "captured_getters_good"; "field_getters_good"; "pointer_before_size_good"];
   List.iter (fun name -> List.iter (fun po -> if po#is_safe then
       failwith (name ^ ": unsafe or unsupported copied read closed")) (reads name))
     ["zero_getter_bad"; "partial_getter_bad"; "oversized_getter_bad";
      "released_getter_bad"; "opaque_getter_bad"; "escaped_getter_unknown";
      "missing_getter_bad"; "nested_getter_unknown"; "unguarded_getter_bad";
-     "field_partial_bad"];
+     "field_partial_bad"; "pointer_before_short_size_bad"];
   CU.analysis_take_down "pooled_getters";
-  print_endline "pooled getters: five conditional reads; ten unsafe/unsupported reads open"
+  print_endline "pooled getters: six conditional reads; eleven unsafe/unsupported reads open"
