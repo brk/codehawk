@@ -384,14 +384,14 @@ object (self)
                      :: (List.map (fun v -> p2s v#toPretty) memoryvars)) in
                 let fieldcode = make_c_cmd (ABSTRACT_VARS memoryvars) in
                 let (rcode, rval) =
-                  self#get_arg_post_value postconditions fnargs frVar returntype in
+                  self#get_arg_post_value postconditions fnargs args frVar returntype in
                 let assign = make_c_cmd (ASSIGN_NUM (rvar, rval)) in
                 let postassert =
                   self#get_post_assert postconditions fname fvid rvar fnargs in
                 [fieldcode; rcode; assign; postassert]
              | _ ->
                 let (rcode,rval) =
-                  self#get_arg_post_value postconditions fnargs frVar returntype in
+                  self#get_arg_post_value postconditions fnargs args frVar returntype in
                 let assign = make_c_cmd (ASSIGN_NUM (rvar, rval)) in
                 let postassert =
                   self#get_post_assert postconditions fname fvid rvar fnargs in
@@ -504,6 +504,7 @@ object (self)
                    (postconditions:
                       annotated_xpredicate_t list * annotated_xpredicate_t list)
                    (args:xpr_t list)
+                   (cargs:exp list)
                    (returnvalue:variable_t)
                    (returntype:typ) =
     let rval =
@@ -523,6 +524,19 @@ object (self)
                      (fun (n: numerical_t) -> env#mk_num_constant n) in
                    let arg = List.nth args (n-1) in
                    Some (xpr2numexpr tmpProvider cstProvider arg)
+                | XRelationalExpr (Eq, ReturnValue,
+                    ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff))
+                  | XRelationalExpr (Eq,
+                      ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff), ReturnValue)
+                    when n > 0 && n <= List.length cargs
+                         && is_pointer_type (fenv#get_type_unrolled returntype) ->
+                   (match CCHMemoryInitialization.readonly_getter_field
+                            env (List.nth cargs (n - 1)) soff with
+                    | Some field ->
+                       let arg = exp_translator#translate_exp context field in
+                       Some (xpr2numexpr (fun () -> env#mk_num_temp)
+                           (fun n -> env#mk_num_constant n) arg)
+                    | _ -> None)
                 | XTainted (ReturnValue, lb, ub) ->
                    let xlb = match lb with
                      | Some (NumConstant n) -> Some (XConst (IntConst n))
@@ -951,7 +965,7 @@ object (self)
                 | _  ->
                    let (rcode, rval) =
                      self#get_arg_post_value
-                       postconditions fnargs frVar returntype in
+                       postconditions fnargs args frVar returntype in
                    let assign = make_c_cmd (ASSIGN_NUM (rvar, rval)) in
                    let postassert =
                      self#get_post_assert
@@ -984,6 +998,7 @@ object (self)
                    (postconditions:
                       annotated_xpredicate_t list * annotated_xpredicate_t list)
                    (args:xpr_t list)
+                   (cargs:exp list)
                    (returnvalue:variable_t)
                    (returntype:typ) =
     let rval =
@@ -1003,6 +1018,19 @@ object (self)
                      (fun (n:numerical_t) -> env#mk_num_constant n) in
                    let arg = List.nth args (n-1) in
                    Some (xpr2numexpr tmpProvider cstProvider arg)
+                | XRelationalExpr (Eq, ReturnValue,
+                    ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff))
+                  | XRelationalExpr (Eq,
+                      ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff), ReturnValue)
+                    when n > 0 && n <= List.length cargs
+                         && is_pointer_type (fenv#get_type_unrolled returntype) ->
+                   (match CCHMemoryInitialization.readonly_getter_field
+                            env (List.nth cargs (n - 1)) soff with
+                    | Some field ->
+                       let arg = exp_translator#translate_exp context field in
+                       Some (xpr2numexpr (fun () -> env#mk_num_temp)
+                           (fun n -> env#mk_num_constant n) arg)
+                    | _ -> None)
                 | XTainted (ReturnValue, lb, ub) ->
                    let xlb = match lb with
                      | Some (NumConstant n) -> Some (XConst (IntConst n))

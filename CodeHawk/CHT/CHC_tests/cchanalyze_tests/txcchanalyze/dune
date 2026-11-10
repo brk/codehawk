@@ -17,8 +17,11 @@
         cCHPOCheckAllocatedBytesTest
         cCHPOCheckGuardedOutputsTest
         cCHPOCheckGuardPrecisionTest
+        cCHPOCheckDescriptorGetterTest
         )
   (deps
+        testinputs/PDescriptorGetter/descriptor_getter.cch.tar.gz
+        testinputs/PDescriptorGetter/descriptor_getter_c.xml
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz
         testinputs/PLocallyInitialized/locally_initialized_gl_memlval_memref_001.cch.tar.gz
         testinputs/PLocallyInitialized/locally_initialized_rl_xpr_001.cch.tar.gz

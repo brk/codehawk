@@ -154,6 +154,7 @@ object (self)
     [make_labeled_transaction 0 tmps_requested (constantAssigns @ ccmds)]
 
   method translate (f:fundec) =
+    let _ = CCHMemoryInitialization.register_local_byte_ranges env f in
     let context = mk_program_context () in
     let _ = env#register_program_locals f.sdecls#get_locals NUM_VAR_TYPE in
     let _ = env#register_function_return f.svar.vtype NUM_VAR_TYPE in
@@ -236,6 +237,7 @@ class interval_function_translator_t
 object
 
   method translate (f:fundec) =
+    let _ = CCHMemoryInitialization.register_local_byte_ranges env f in
     let context = mk_program_context () in
     let _ = env#register_program_locals f.sdecls#get_locals NUM_VAR_TYPE in
     let _ = env#register_function_return f.svar.vtype NUM_VAR_TYPE in
@@ -328,6 +330,7 @@ class valueset_function_translator_t
 object
 
   method translate (f:fundec) =
+    let _ = CCHMemoryInitialization.register_local_byte_ranges env f in
     let context = mk_program_context () in
     let _ = env#register_program_locals f.sdecls#get_locals NUM_VAR_TYPE in
     let _ = env#register_function_return f.svar.vtype NUM_VAR_TYPE in

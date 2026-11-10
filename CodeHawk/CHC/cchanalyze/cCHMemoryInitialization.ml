@@ -143,6 +143,7 @@ let rec relative_bytes poq typ off =
    block-lifetime/control-flow information (loops/gotos/VLAs/assembly). *)
 let local_range_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
 let local_alias_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
+let local_function_bodies : (string, fundec) Hashtbl.t = Hashtbl.create 17
 let guarded_outputs_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
 let guarded_output_contexts : (string, (int, bool) Hashtbl.t) Hashtbl.t =
   Hashtbl.create 17
@@ -181,6 +182,7 @@ let local_byte_range_variables (env: c_environment_int) =
   @ allocated_byte_range_variables env
 
 let register_local_byte_ranges (env: c_environment_int) (f: fundec) =
+  Hashtbl.replace local_function_bodies env#get_functionname f;
   let rec block b = List.for_all stmt b.bstmts
   and stmt s = match s.skind with
     | Instr ins -> List.for_all (function Set _ | Call _ -> true | _ -> false) ins
@@ -461,6 +463,81 @@ let safe_alias_slot (env: c_environment_int) lv =
                     && not (range_type_volatile [] vi.vtype) && path vi.vtype off
          | _ -> false)
      | _ -> false
+
+(* A descriptor's address may be exposed solely to a modeled read-only getter
+   returning one of its pointer fields. Do not reuse numeric field facts for
+   arbitrary escaped descriptors: byte writes, root-alias returns, opaque
+   calls and union views can otherwise leave stale overlapping values. *)
+let readonly_getter_field (env: c_environment_int) argument soff =
+  let contracts = CCHFileContract.file_contract in
+  let rec root = function
+    | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) -> root e
+    | AddrOf (Var (_, vid), NoOffset) -> Some vid
+    | _ -> None in
+  match root argument, Hashtbl.find_opt local_function_bodies env#get_functionname with
+  | Some vid, Some body when
+      Hashtbl.find_opt local_alias_enabled env#get_functionname = Some true
+      && List.for_all (fun g -> g#get_value = None) contracts#get_globalvar_contracts ->
+     let getter_argument name index =
+       if not (contracts#has_function_contract name) then false else
+         let contract = contracts#get_function_contract name in
+         contract#get_sideeffects = [XPreservesAllMemory]
+         && List.exists (function
+             | XRelationalExpr (Eq, ReturnValue,
+                 ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), ArgFieldOffset _))
+               | XRelationalExpr (Eq,
+                   ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), ArgFieldOffset _), ReturnValue) ->
+                n = index
+             | _ -> false) contract#get_postconditions in
+     let rec expression allowed = function
+       | AddrOf ((Var (_, id), _) as lv) | StartOf ((Var (_, id), _) as lv) ->
+          if id = vid then allowed && snd lv = NoOffset else lvalue lv
+       | Lval lv -> lvalue lv
+       | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) -> expression allowed e
+       | CastE (_, e) | UnOp (_, e, _) -> expression false e
+       | BinOp (_, a, b, _) -> expression false a && expression false b
+       | Const _ | SizeOf _ | AlignOf _ -> true
+       | SizeOfE e | AlignOfE e -> expression false e
+       | _ -> false
+     and lvalue (host, off) =
+       (match host with Var _ -> true | Mem e -> expression false e) && offset off
+     and offset = function
+       | NoOffset -> true | Field (_, o) -> offset o
+       | Index (e, o) -> expression false e && offset o in
+     let rec block b = List.for_all (fun s -> match s.skind with
+         | Instr ins -> List.for_all (function
+             | Set (lv, e, _) -> lvalue lv && expression false e
+             | Call (lhs, fn, args, _) ->
+                (match lhs with None -> true | Some lv -> lvalue lv)
+                && expression false fn
+                && List.for_all (fun (i, arg) ->
+                    let allowed = match fn with
+                      | Lval (Var (name, _), NoOffset) -> getter_argument name (i + 1)
+                      | _ -> false in
+                    expression allowed arg) (List.mapi (fun i x -> i, x) args)
+             | _ -> false) ins
+         | Return (e, _) -> (match e with None -> true | Some e -> expression false e)
+         | If (e, a, b, _) -> expression false e && block a && block b
+         | Block b -> block b | _ -> false) b.bstmts in
+     (match env#get_varinfo vid with
+      | Ok vi when function_scope_local vi && block body.sbody ->
+         let rec select typ off =
+           let typ = fenv#get_type_unrolled typ in
+           if is_volatile_type typ then None else match off with
+             | ArgFieldOffset (name, rest) ->
+                (match typ with
+                 | TComp (key, _) when (fenv#get_comp key).cstruct ->
+                    (match List.find_opt (fun f -> f.fname = name && f.fbitfield = None)
+                             (fenv#get_comp key).cfields with
+                     | Some field -> Option.map (fun tail -> Field ((name, key), tail))
+                         (select field.ftype rest)
+                     | _ -> None)
+                 | _ -> None)
+             | ArgNoOffset when is_pointer_type typ -> Some NoOffset
+             | _ -> None in
+         Option.map (fun off -> Lval (Var (vi.vname, vi.vid), off)) (select vi.vtype soff)
+      | _ -> None)
+  | _ -> None
 
 let exact_local_address (env: c_environment_int) = function
   | XVar v when env#is_memory_address v ->
@@ -756,8 +833,13 @@ let prove_cleared_local_bytes (poq: po_query_int) ctxt (lv: lval) start count =
              let frames = List.concat_map (fun call ->
                  let callee = call#get_callee in
                  if contracts#has_function_contract callee.vname then
+                   let contract = contracts#get_function_contract callee.vname in
+                   let getter_aliases = List.filter (function
+                       | XRelationalExpr (Eq, ReturnValue, ArgAddressedValue _)
+                         | XRelationalExpr (Eq, ArgAddressedValue _, ReturnValue) -> true
+                       | _ -> false) contract#get_postconditions in
                    List.map (fun p -> PostAssumption (callee.vid, p))
-                     (contracts#get_function_contract callee.vname)#get_sideeffects
+                     (contract#get_sideeffects @ getter_aliases)
                  else []) (proof_scaffolding#get_direct_callsites poq#fname) in
              Some (if frames = [] then DLocal [inv#index]
                    else DEnvC ([inv#index], frames))

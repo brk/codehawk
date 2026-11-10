@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<c-analysis><cfile name="descriptor_getter"><functions>
+<function name="read_pointer"><parameters><par name="descriptor" nr="1"/></parameters>
+<preconditions><pre><math><apply><initialized/><apply><addressed-value><field name="pointer"/></addressed-value><ci>descriptor</ci></apply></apply></math></pre></preconditions>
+<postconditions><post><math><apply><eq/><return/><apply><addressed-value><field name="pointer"/></addressed-value><ci>descriptor</ci></apply></apply></math></post></postconditions>
+<sideeffects><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects>
+</function>
+<function name="root_identity"><parameters><par name="p" nr="1"/></parameters><postconditions><post><math><apply><eq/><return/><ci>p</ci></apply></math></post></postconditions><sideeffects><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects></function>
+<function name="post_only_pointer"><parameters><par name="descriptor" nr="1"/></parameters><postconditions><post><math><apply><eq/><return/><apply><addressed-value><field name="pointer"/></addressed-value><ci>descriptor</ci></apply></apply></math></post></postconditions></function>
+<function name="readonly_unknown"><parameters><par name="descriptor" nr="1"/></parameters><sideeffects><sideeffect><math><apply><preserves-all-memory/></apply></math></sideeffect></sideeffects></function>
+</functions></cfile></c-analysis>

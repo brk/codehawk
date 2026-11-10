@@ -807,6 +807,33 @@ object (self)
            ?(site: (string * int * string) option = None)
            (deps: dependencies_t)
            (expl: string) =
+    (* A modeled descriptor getter can transport an exact local address into
+       any numeric pointer check, not just initialization. Numeric domains do
+       not retain the origin of equalities, so conservatively keep all eligible
+       getter aliases/frames in this function. Exclude the current call: its
+       postcondition must never support its own entry premises. *)
+    let getter_assumptions = List.concat_map (fun call ->
+        let callee = call#get_callee in
+        if CCHContext.ccontexts#index_context call#get_context#project_on_cfg
+             = CCHContext.ccontexts#index_context cfgcontext
+           || not (file_contract#has_function_contract callee.vname) then [] else
+          let contract = file_contract#get_function_contract callee.vname in
+          let args = call#get_arguments in
+          let eligible = contract#get_sideeffects = [XPreservesAllMemory]
+            && List.exists (function
+                | XRelationalExpr (Eq, ReturnValue,
+                    ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff))
+                  | XRelationalExpr (Eq,
+                      ArgAddressedValue (ArgValue (ParFormal n, ArgNoOffset), soff), ReturnValue)
+                      when n > 0 && n <= List.length args ->
+                   Option.is_some (CCHMemoryInitialization.readonly_getter_field
+                       env (List.nth args (n - 1)) soff)
+                | _ -> false) contract#get_postconditions in
+          if eligible then List.map (fun p -> PostAssumption (callee.vid, p))
+              (contract#get_postconditions @ contract#get_sideeffects)
+          else []) callsitemgr#get_direct_callsites in
+    let deps = if getter_assumptions = [] then deps else
+        join_dependencies deps (DEnvC ([], getter_assumptions)) in
     (* Initialization and field-value facts preserved by explicit contracts must
        retain those assumptions. Conservatively include all modeled direct
        calls in this function, even when a more precise path needs fewer. *)
