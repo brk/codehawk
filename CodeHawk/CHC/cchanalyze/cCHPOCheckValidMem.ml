@@ -63,13 +63,11 @@ let e2s e = p2s (exp_to_pretty e)
 let cd = CCHDictionary.cdictionary
 
 (* -----------------------------------------------------------------------------
- * The IH guarantees that any region pointed to by an argument is valid memory
- * at function entry point (checked at the time of the call). Similarly any
- * region pointed to by a return value from a callee is valid memory at the
- * point where the pointer value is received. For any other address
- * locations received from outside the proof obligation should be delegated.
- * If the application does not contain any calls to free at all (indicated by
- * global_free) the valid-mem obligation is vacuously valid.
+ * Entry-pointer validity is an explicit API premise, checked at callers.
+ * A callee pointer return requires an explicit valid-memory postcondition or
+ * newly allocated heap-memory evidence, covering every allowed return class.
+ * Preservation (including global no-free) only maintains an established
+ * origin; it cannot establish validity for an arbitrary pointer value.
  * Any region pointed to can potentially be freed by any calls that are made
  * after the address is received, which is the reason for checking the effect
  * of any calls made since receiving the pointer value.
@@ -83,17 +81,6 @@ class valid_mem_checker_t
 object (self)
 
   val memregmgr = poq#env#get_variable_manager#memregmgr
-
-  method global_free =
-    if global_contract#is_nofree then
-      let deps = DEnvC ( [], [GlobalAssumption (XPreservesAllMemory)]) in
-      let msg = "application does not free any memory" in
-      begin
-        poq#record_safe_result deps msg;
-        true
-      end
-    else
-      false
 
   method private is_uninterpreted s =
     memregmgr#is_uninterpreted s#getSeqNumber
@@ -291,6 +278,10 @@ object (self)
     match calls with Some _ -> true | _ -> false
 
   method private validity_maintenance v callvar =
+    if global_contract#is_nofree then
+      Some (DEnvC ([], [GlobalAssumption XPreservesAllMemory]),
+            "global no-free premise preserves the established memory origin")
+    else
     let calls = self#get_calls callvar in
     match calls with
     | Some [] ->
@@ -344,25 +335,13 @@ object (self)
 
   method private initial_value_implies_safe (invindex: int) (v: variable_t) =
     if poq#env#is_initial_parameter_value v then
-      let (vinfo, _) = poq#env#get_initial_parameter_vinfo v in
-      let vtype =
-        CCHFileEnvironment.file_environment#get_type_unrolled vinfo.vtype in
-      if CCHTypesUtil.has_deref_const_attribute vtype then
-        let deps = DLocal [invindex] in
-        let msg = "function parameter " ^ vinfo.vname ^ " is a const parameter" in
-        Some (deps, msg)
-      else
-        let vv = poq#env#get_initial_value_variable v in
-        let deps = DLocal [invindex] in
-        let msg = "initial value of argument: " ^ vv#getName#getBaseName in
-        let _ =
-          poq#set_diagnostic_arg 1 ("initial value of " ^ (p2s (vv#toPretty))) in
-        match self#validity_maintenance v poq#env#get_fn_entry_call_var with
-        | Some (d, m) ->
-           let deps = join_dependencies deps d in
-           let msg = msg ^ ";  " ^  m in
-           Some (deps, msg)
-        | _ -> None
+      let (vinfo, offset) = poq#env#get_initial_parameter_vinfo v in
+      let pred = PValidMem (Lval (Var (vinfo.vname, vinfo.vid), offset)) in
+      let deps = DEnvC ([invindex], [ApiAssumption pred]) in
+      let msg = "entry validity delegated to caller: " ^ vinfo.vname in
+      (match self#validity_maintenance v poq#env#get_fn_entry_call_var with
+       | Some (d, m) -> Some (join_dependencies deps d, msg ^ "; " ^ m)
+       | _ -> None)
     else if poq#is_global_expression (XVar v) then
       match self#global_implies_safe
               invindex (poq#get_global_expression (XVar v)) with
@@ -405,28 +384,36 @@ object (self)
         None
 
   method private function_return_value_implies_safe
-                   (_invindex: int) (v: variable_t) =
+                   (invindex: int) (v: variable_t) =
     let callee = poq#env#get_callvar_callee v in
     let _ =
       poq#set_diagnostic_arg 1 ("return value from " ^ callee.vname) in
-    if self#has_call_record v then
-      match self#validity_maintenance v v with
-      | Some (deps,msg) ->
-         let msg =
-           "return value from " ^ callee.vname
-           ^ " is valid by IH on receipt and validity is maintained: "
-           ^ msg in
-         Some (deps, msg)
-      | _ -> None
-    else
-      match self#validity_maintenance v poq#env#get_fn_entry_call_var with
-      | Some (deps,msg) ->
-         let msg =
-           "return value from " ^ callee.vname
-           ^ " is valid by IH on receipt and validity is maintainted by all calls: "
-           ^ msg  in
-         Some (deps, msg)
-      | _ -> None
+    let (pcs, epcs) = poq#get_postconditions v in
+    let has pred = List.exists (fun (pc, _) -> pc = pred) pcs in
+    let origin =
+      if has (XValidMem ReturnValue) then Some [XValidMem ReturnValue]
+      else if has (XNewMemory ReturnValue) && has (XHeapAddress ReturnValue) then
+        Some [XNewMemory ReturnValue; XHeapAddress ReturnValue]
+      else None in
+    let errors_covered = List.for_all (fun (pc, _) -> match pc with
+      | XNull ReturnValue | XValidMem ReturnValue -> true
+      | _ -> false) epcs in
+    match origin with
+    | Some evidence when errors_covered ->
+       let evidence = evidence @ List.map fst epcs in
+       let deps = DEnvC ([invindex], List.map (fun pc ->
+         PostAssumption (callee.vid, pc)) evidence) in
+       let callvar = if self#has_call_record v then v else poq#env#get_fn_entry_call_var in
+       (match self#validity_maintenance v callvar with
+        | Some (d, msg) ->
+           Some (join_dependencies deps d,
+             "explicit return-memory evidence from " ^ callee.vname ^ "; " ^ msg)
+        | _ -> None)
+    | _ ->
+       poq#mk_postcondition_request (XValidMem ReturnValue) callee;
+       poq#set_diagnostic
+         ("no complete return-memory evidence for " ^ callee.vname);
+       None
 
   method private var_implies_safe (invindex: int) (v: variable_t)  =
     if poq#env#is_memory_address v then
@@ -469,8 +456,7 @@ object (self)
     r
 
   method check_safe =
-    self#global_free
-    || (match invs with
+    (match invs with
         | [] -> false
         | _  ->
            (List.fold_left (fun acc inv ->

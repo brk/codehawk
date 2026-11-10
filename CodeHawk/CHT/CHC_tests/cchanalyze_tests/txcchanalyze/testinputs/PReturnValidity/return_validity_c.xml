@@ -1,0 +1,55 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="return_validity">
+    <functions>
+    <function name="new_only_pointer"><parameters/><postconditions><post><math><apply><new-memory/><return/></apply></math></post></postconditions></function>
+    <function name="heap_only_pointer"><parameters/><postconditions><post><math><apply><heap-address/><return/></apply></math></post></postconditions></function>
+      <function name="valid_pointer">
+        <parameters />
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <valid-mem />
+                <return />
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="new_pointer">
+        <parameters />
+        <postconditions>
+          <post>
+            <math>
+              <apply>
+                <new-memory />
+                <return />
+              </apply>
+            </math>
+          </post>
+          <post>
+            <math>
+              <apply>
+                <heap-address />
+                <return />
+              </apply>
+            </math>
+          </post>
+        </postconditions>
+      </function>
+      <function name="readonly_call">
+        <parameters />
+        <sideeffects>
+          <sideeffect>
+            <math>
+              <apply>
+                <preserves-all-memory />
+              </apply>
+            </math>
+          </sideeffect>
+        </sideeffects>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

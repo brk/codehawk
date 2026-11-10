@@ -1,6 +1,8 @@
 (tests
   (names
         cCHPOCheckAbsoluteValidityTest
+        cCHPOCheckReturnValidityTest
+        cCHPOCheckNoFreeValidityTest
         cCHPOCheckLocallyInitializedTest
         cCHPOCheckOutputParameterInitializedTest
         cCHPOCheckErrnoWrittenTest
@@ -28,6 +30,12 @@
   (deps
         testinputs/PAbsoluteValidity/absolute_validity.cch.tar.gz
         testinputs/PAbsoluteValidity/absolute_validity_c.xml
+        testinputs/PReturnValidity/return_validity.cch.tar.gz
+        testinputs/PReturnValidity/return_validity_c.xml
+        testinputs/PReturnValidity/cchsummaries.jar
+        testinputs/PNoFreeValidity/nofree_validity.cch.tar.gz
+        testinputs/PNoFreeValidity/nofree_validity_c.xml
+        testinputs/PNoFreeValidity/globaldefs.xml
         testinputs/PNullableAlias/nullable_alias.cch.tar.gz
         testinputs/PNullableAlias/nullable_alias_c.xml
         testinputs/PScalarGetters/scalar_getters.cch.tar.gz

@@ -1,0 +1,3 @@
+<c-analysis><cfile name="nofree_validity"><functions>
+<function name="valid_pointer"><parameters/><postconditions><post><math><apply><valid-mem/><return/></apply></math></post></postconditions></function>
+</functions></cfile></c-analysis>

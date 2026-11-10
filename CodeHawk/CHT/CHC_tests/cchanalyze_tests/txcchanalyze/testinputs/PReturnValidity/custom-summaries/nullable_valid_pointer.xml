@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<codehawk-summary-file>
+  <function-summary name="nullable_valid_pointer">
+    <parameters />
+    <postconditions>
+      <post>
+        <math>
+          <apply>
+            <valid-mem />
+            <return />
+          </apply>
+        </math>
+      </post>
+      <error-post>
+        <math>
+          <apply>
+            <null />
+            <return />
+          </apply>
+        </math>
+      </error-post>
+    </postconditions>
+  </function-summary>
+</codehawk-summary-file>
