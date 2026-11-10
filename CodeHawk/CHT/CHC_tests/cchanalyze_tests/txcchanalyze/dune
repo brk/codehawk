@@ -18,8 +18,11 @@
         cCHPOCheckGuardedOutputsTest
         cCHPOCheckGuardPrecisionTest
         cCHPOCheckDescriptorGetterTest
+        cCHPOCheckNullCastTest
         )
   (deps
+        testinputs/PNullCast/null_cast.cch.tar.gz
+        testinputs/PNullCast/null_cast_c.xml
         testinputs/PDescriptorGetter/descriptor_getter.cch.tar.gz
         testinputs/PDescriptorGetter/descriptor_getter_c.xml
         testinputs/PLocallyInitialized/locally_initialized_gl_inv_001.cch.tar.gz

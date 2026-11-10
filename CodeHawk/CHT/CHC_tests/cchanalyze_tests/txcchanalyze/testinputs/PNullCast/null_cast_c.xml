@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<c-analysis><cfile name="null_cast"><functions>
+<function name="needs_pointer"><parameters><par name="p" nr="1"/></parameters>
+<preconditions><pre><math><apply><not-null/><ci>p</ci></apply></math></pre></preconditions>
+</function></functions></cfile></c-analysis>

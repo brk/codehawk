@@ -641,6 +641,11 @@ let check_ppo_validity
        | _ -> ()
      end
 
+  (* Null pointer constants, including nested pointer casts, must be checked
+     before the general absolute-address cases below. Zero is not nonnull. *)
+  | PNotNull e when is_null_pointer e ->
+     make_violation "expression is a null pointer"
+
   | PNotNull (AddrOf (Var v,_))
   | PNotNull (StartOf (Var v,_))
   | PNotNull (CastE (_,AddrOf (Var v,_)))
@@ -694,9 +699,6 @@ let check_ppo_validity
                      (Var ((("stdin"|"stdout"|"stderr") as vname),_),
                       NoOffset))) ->
      make ("library variable " ^ vname ^ " is not null")
-
-  | PNotNull e when is_null_pointer e ->
-     make_violation "expression is a null pointer"
 
   | PNotNull e when has_embedded_null_dereference e ->
      make (
