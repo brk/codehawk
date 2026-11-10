@@ -1,0 +1,4 @@
+<c-analysis><cfile name="return_bounds"><functions>
+<function name="bounded_pointer"><parameters/><postconditions><post><math><apply><rev-buffer/><return/><cn>0</cn></apply></math></post></postconditions></function>
+<function name="valid_pointer"><parameters/><postconditions><post><math><apply><valid-mem/><return/></apply></math></post></postconditions></function>
+</functions></cfile></c-analysis>

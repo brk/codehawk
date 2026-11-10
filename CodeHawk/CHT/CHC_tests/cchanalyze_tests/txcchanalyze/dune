@@ -2,6 +2,7 @@
   (names
         cCHPOCheckAbsoluteValidityTest
         cCHPOCheckReturnValidityTest
+        cCHPOCheckReturnBoundsTest
         cCHPOCheckNoFreeValidityTest
         cCHPOCheckLocallyInitializedTest
         cCHPOCheckOutputParameterInitializedTest
@@ -33,6 +34,9 @@
         testinputs/PReturnValidity/return_validity.cch.tar.gz
         testinputs/PReturnValidity/return_validity_c.xml
         testinputs/PReturnValidity/cchsummaries.jar
+        testinputs/PReturnBounds/return_bounds.cch.tar.gz
+        testinputs/PReturnBounds/return_bounds_c.xml
+        testinputs/PReturnBounds/cchsummaries.jar
         testinputs/PNoFreeValidity/nofree_validity.cch.tar.gz
         testinputs/PNoFreeValidity/nofree_validity_c.xml
         testinputs/PNoFreeValidity/globaldefs.xml

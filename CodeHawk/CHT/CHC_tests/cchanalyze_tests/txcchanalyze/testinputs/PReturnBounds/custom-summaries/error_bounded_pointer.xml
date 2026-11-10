@@ -1,0 +1,4 @@
+<codehawk-summary-file><function-summary name="error_bounded_pointer"><parameters/><postconditions>
+<post><math><apply><rev-buffer/><return/><cn>0</cn></apply></math></post>
+<error-post><math><apply><eq/><return/><cn>1</cn></apply></math></error-post>
+</postconditions></function-summary></codehawk-summary-file>

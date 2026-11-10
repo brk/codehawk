@@ -91,36 +91,35 @@ object (self)
        let msg = "address of stack variable: " ^ vinfo.vname in
        Some (deps, msg)
     | CBaseVar (svar, _) ->
-       let msg =
-         "address of externally provided variable/field: "
-         ^ svar#getName#getBaseName in
-       Some (deps, msg)
+       if poq#env#is_function_return_value svar then
+         self#var_implies_safe invindex svar
+       else None
     | _ ->
        None
 
   method private var_implies_safe (invindex: int) (v: variable_t) =
-    let deps = DLocal [invindex] in
     if poq#env#is_initial_parameter_value v then
-       let par = poq#env#get_initial_value_variable v in
-       let msg =
-         "initial value of parameter: "
-         ^ par#getName#getBaseName
-         ^ " satisfies lower bound by IH" in
-       Some (deps, msg)
+       None (* Delegate the exact lower-bound predicate to callers below. *)
     else if poq#env#is_initial_global_value v then
-      let var = poq#env#get_initial_value_variable v in
-      let msg =
-        "initial value of global value: "
-        ^ var#getName#getBaseName
-        ^ " satisfies lower bound by IH" in
-      Some (deps, msg)    (* TBD: check intervening calls *)
+      None (* A global pointer value is not the address of its backing object. *)
     else if poq#env#is_function_return_value v then
       let callee = poq#env#get_callvar_callee v in
-      let msg =
-        "return value from function "
-        ^ callee.vname
-        ^ " satisfies lower bound by IH" in
-      Some (deps, msg)
+      let (pcs, epcs) = poq#get_postconditions v in
+      let is_bound = function
+        | XRevBuffer (ReturnValue, NumConstant n) when n#geq numerical_zero -> true
+        | _ -> false in
+      let errors_covered = List.for_all (fun (pc, _) ->
+        pc = XNull ReturnValue || is_bound pc) epcs in
+      (match List.find_opt (fun (pc, _) -> is_bound pc) pcs with
+       | Some (pc, _) when errors_covered ->
+          let evidence = pc :: List.map fst epcs in
+          let deps = DEnvC ([invindex], List.map (fun p ->
+            PostAssumption (callee.vid, p)) evidence) in
+          Some (deps, "explicit reverse-buffer evidence from " ^ callee.vname)
+       | _ ->
+          poq#mk_postcondition_request
+            (XRevBuffer (ReturnValue, NumConstant numerical_zero)) callee;
+          None)
     else if poq#env#is_memory_address v then
       let (memref,offset) = poq#env#get_memory_address v in
       match offset with
