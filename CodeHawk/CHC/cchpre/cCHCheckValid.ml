@@ -718,11 +718,6 @@ let check_ppo_validity
   | PValidMem e when is_null_pointer e ->
      make "null pointer"
 
-  | PValidMem e when is_absolute_memory_address env e ->
-     (match get_absolute_memory_address env e with
-      | Some s -> make ("absolute address in memory: " ^ s)
-      | _ -> ())
-
   | PValidMem e when has_embedded_null_dereference e ->
      make "embedded null dereference: null dereference is checked separately"
 
@@ -831,16 +826,6 @@ let check_ppo_validity
   | PInScope e when has_embedded_null_dereference e ->
      make "embedded null dereference; null dereference is checked separately"
 
-  | PInScope e when is_absolute_memory_address env e ->
-     (match get_absolute_memory_address env e with
-      | Some s -> make ("absolute address in memory: " ^ s)
-      | _ -> ())
-
-  |  PInScope (CastE (_, Const (CInt (i64,_,_))))
-     | PInScope (CastE (_, (CastE (_, Const (CInt (i64,_,_))))))
-       when int64_non_negative i64 ->
-      make ("memory mapped i/o at address " ^ (i64_to_hex_string i64))
-
   | PInScope (Lval (Var ((("stdin" | "stdout" | "stderr") as vname),_),NoOffset))
     | PInScope
         (CastE (_, Lval
@@ -853,10 +838,6 @@ let check_ppo_validity
             && TR.tfold_default
                  (fun vinfo -> vinfo.vglob) false (get_varinfo vid) ->
      make ("variable " ^ vname ^ " is global")
-
-  | PInScope (AddrOf (Mem (CastE (TPtr _, (Const (CInt (i64, _, _))))), _))
-       when int64_non_negative i64 ->
-     make ("memory mapped i/o at address " ^  (i64_to_hex_string i64))
 
   | PInScope (AddrOf (Var (vname, vid),_))
     | PInScope (StartOf (Var (vname,vid),_)) when vid > 0 ->
@@ -1873,11 +1854,6 @@ let check_ppo_validity
     | PLowerBound (_, CastE (_, Const (CWStr _))) ->
      make "constant wide string is allocated by compiler"
 
-  | PLowerBound (_, e) when is_absolute_memory_address env e ->
-     (match get_absolute_memory_address env e with
-      | Some s -> make ("absolute address in memory: " ^ s)
-      | _ -> ())
-
   | PLowerBound (_,
                  Lval (Var ((("stdin" | "stdout" | "stderr") as vname), _),
                        NoOffset))
@@ -1886,27 +1862,6 @@ let check_ppo_validity
                      (_, Lval (Var ((("stdin"|"stdout"|"stderr") as vname), _),
                                NoOffset))) ->
      make ("library variable " ^ vname ^ " satisfies lower bound")
-
-  | PLowerBound (_, CastE(_, Const (CInt (i64, _, _)))) ->
-     let addr = i64_to_hex_string i64 in
-     let _ =
-       chlog#add
-         "absolute address pointer"
-         (LBLOCK [STR "Lower bound of "; STR addr]) in
-     make ("absolute address in memory: " ^ addr)
-
-  | PLowerBound (_, CastE(_, CastE(_, Const (CInt (i64, _, _))))) ->
-     let addr = i64_to_hex_string i64 in
-     let _ =
-       chlog#add
-         "absolute address pointer"
-         (LBLOCK [STR "Lower bound of "; STR addr]) in
-     make ("absolute address in memory: " ^ addr)
-
-  | PLowerBound (_,
-                 (AddrOf (Mem (CastE (TPtr _, (Const (CInt (i64, _, _))))), _)) )
-       when int64_non_negative i64 ->
-     make ("memory mapped i/o at address " ^  (i64_to_hex_string i64))
 
   | PLowerBound (_, AddrOf (Var _, _))
     | PLowerBound (_, CastE (_,AddrOf (Var _, _)))
@@ -1947,32 +1902,6 @@ let check_ppo_validity
   | PUpperBound (_, Const (CWStr _))
     | PUpperBound (_, CastE (_, Const (CWStr _))) ->
      make "constant wide string is allocated by compiler"
-
-  | PUpperBound (_, e) when is_absolute_memory_address env e ->
-     (match get_absolute_memory_address env e with
-      | Some s -> make ("absolute address in memory: " ^ s)
-      | _ -> ())
-
-  | PUpperBound (_, CastE(_, Const (CInt (i64, _, _)))) ->
-     let addr = i64_to_hex_string i64 in
-     let _ =
-       chlog#add
-         "absolute address pointer"
-         (LBLOCK [STR "Upper bound of "; STR addr]) in
-     make ("absolute address in memory: " ^ addr)
-
-  | PUpperBound (_, CastE(_, CastE(_, Const (CInt (i64, _, _))))) ->
-     let addr = i64_to_hex_string i64 in
-     let _ =
-       chlog#add
-         "absolute address pointer"
-         (LBLOCK [STR "Upper bound of "; STR addr]) in
-     make ("absolute address in memory: " ^ addr)
-
-  | PUpperBound (_,
-                 (AddrOf (Mem (CastE (TPtr _, (Const (CInt (i64, _, _))))), _)))
-       when int64_non_negative i64 ->
-     make ("memory mapped i/o at address " ^ (i64_to_hex_string i64))
 
   | PUpperBound (_, AddrOf (Var _, _))
     | PUpperBound (_, CastE (_, AddrOf (Var _, _)))

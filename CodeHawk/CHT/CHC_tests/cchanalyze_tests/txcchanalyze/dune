@@ -1,5 +1,6 @@
 (tests
   (names
+        cCHPOCheckAbsoluteValidityTest
         cCHPOCheckLocallyInitializedTest
         cCHPOCheckOutputParameterInitializedTest
         cCHPOCheckErrnoWrittenTest
@@ -25,6 +26,8 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PAbsoluteValidity/absolute_validity.cch.tar.gz
+        testinputs/PAbsoluteValidity/absolute_validity_c.xml
         testinputs/PNullableAlias/nullable_alias.cch.tar.gz
         testinputs/PNullableAlias/nullable_alias_c.xml
         testinputs/PScalarGetters/scalar_getters.cch.tar.gz

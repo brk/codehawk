@@ -144,9 +144,6 @@ object (self)
     | XConst (IntConst n) when n#equal numerical_zero ->
        let msg = "value is null pointer" in
        Some (deps, msg)
-    | XConst (IntConst n) when n#gt numerical_zero ->
-       let msg = "absolute memory address: " ^ n#toString in
-       Some (deps, msg)
     | XVar v -> self#var_implies_safe invindex v
     | XOp (XPlus, [XVar v; XConst (IntConst n)]) when n#geq numerical_zero ->
        begin
@@ -291,10 +288,6 @@ object (self)
 
   method private xpr_implies_universal_violation invindex x =
     match x with
-    | XConst (IntConst n) when n#lt numerical_zero ->
-       let deps = DLocal [invindex] in
-       let msg = "value: " ^ n#toString  ^ "  violates zero lower bound" in
-       Some (deps,msg)
     | XVar v -> self#var_offset_implies_universal_violation invindex v zero_constant_expr
     | XOp (XPlus, [XVar v; xincr]) ->
        self#var_offset_implies_universal_violation invindex v xincr
