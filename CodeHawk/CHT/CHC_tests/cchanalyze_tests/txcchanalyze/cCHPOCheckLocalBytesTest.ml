@@ -42,10 +42,11 @@ let () =
      "conditional_bad"; "branches_gap_bad"; "overwrite_bad";
      "field_overwrite_bad"; "direct_alias_bad"; "opaque_bad"; "post_only_bad";
      "indirect_bad"; "released_bad"; "beyond_bad"; "oversized_clear_bad";
-     "volatile_unknown"; "user_clear_unknown"; "clear_indirect_unknown";
+     "volatile_unknown"; "user_clear_unknown";
      "allocation_unknown"; "loop_lifetime_unknown"; "asm_unknown";
      "two_clears_unknown";
      "vla_unknown"; "direct_partial_bad"; "direct_model_bad";
      "direct_model_partial_bad"];
+  List.iter (CU.check_open_copy_source "clear_indirect_unknown") (reads "clear_indirect_unknown");
   CU.analysis_take_down "local_bytes";
   print_endline "local memset bytes: intervals, fields, joins, frames and invalidation passed"

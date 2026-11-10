@@ -1,5 +1,6 @@
 (tests
   (names
+        cCHPOCheckMemcpyFieldRequirementTest
         cCHPOCheckLocalSettersTest
         cCHPOCheckParameterRangesTest
         cCHPOCheckParameterRegionsTest
@@ -35,6 +36,7 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PMemcpyFieldRequirement/memcpy_field_requirement.cch.tar.gz
         testinputs/PLocalSetters/local_setters.cch.tar.gz
         testinputs/PLocalSetters/local_setters_c.xml
         testinputs/PParameterRanges/parameter_ranges.cch.tar.gz

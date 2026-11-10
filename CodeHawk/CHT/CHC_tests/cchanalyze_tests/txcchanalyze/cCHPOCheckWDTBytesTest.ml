@@ -46,9 +46,10 @@ let () =
       if po#is_safe then failwith (name ^ ": region bytes/lifetime invented"))
       (reads name))
     ["partial_bad"; "sibling_bad"; "overwritten_bad"; "opaque_bad";
-     "entry_unknown"; "loop_unknown";
+     "loop_unknown";
      "allocated_unknown"; "acquired_unknown"; "failed_acquire_bad";
      "released_bad"];
+  List.iter (CU.check_open_copy_source "entry_unknown") (reads "entry_unknown");
   List.iter (fun name ->
       let ranges = List.filter (fun po -> match po#get_predicate with
           | PInitializedRange _ -> true | _ -> false) (obligations name) in

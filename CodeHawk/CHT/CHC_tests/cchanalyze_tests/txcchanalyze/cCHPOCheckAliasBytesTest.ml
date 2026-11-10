@@ -39,8 +39,9 @@ let () =
      "indirect_bad"; "released_bad"; "escaped_slot_unknown";
      "escaped_descriptor_unknown"; "partial_slot_unknown";
      "integer_cast_unknown"; "union_slot_unknown"; "ambiguous_unknown";
-     "arithmetic_alias_unknown"; "external_unknown"; "allocation_unknown";
+     "arithmetic_alias_unknown"; "allocation_unknown";
      "disjoint_alias_unknown"];
+  List.iter (CU.check_open_copy_source "external_unknown") (reads "external_unknown");
   List.iter (fun po -> match po#get_dependencies with
       | Some (DEnvC (_, assumptions)) when List.exists (function
           | PostAssumption (_, XRelationalExpr (Eq, ReturnValue, _)) -> true

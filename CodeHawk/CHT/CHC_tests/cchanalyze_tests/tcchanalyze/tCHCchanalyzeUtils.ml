@@ -106,6 +106,16 @@ let located_po_to_string (po: proof_obligation_int) =
   ^ (match po#get_explanation with
      | Some smsg -> smsg.smsg_msg | _ -> "no explanation")
 
+let check_open_copy_source ?line name (po: proof_obligation_int) =
+  let manager = CCHProofScaffolding.proof_scaffolding#get_spo_manager name in
+  match po#get_dependencies with
+  | Some (DReduced (_ :: _, [LocalAssumption (PInitializedRange _ as predicate)]))
+       when po#is_safe && List.exists (fun requirement ->
+           requirement#get_predicate = predicate
+           && (match line with Some n -> requirement#get_location.line = n | None -> true)
+           && not requirement#is_safe) manager#get_spos -> ()
+  | _ -> failwith (name ^ ": " ^ located_po_to_string po)
+
 
 let select_target_po
       ?(reqargs:string list = [])

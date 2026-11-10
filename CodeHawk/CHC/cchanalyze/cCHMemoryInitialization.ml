@@ -1391,6 +1391,55 @@ let memcpy_call poq sequence =
     if call#get_header = "lib:string" then Some (origin, call) else None
   else None
 
+(* An exact field copy from caller storage can reduce to an initialized-byte
+   requirement at the copy. The alias is used to select this case, never as
+   evidence of byte contents, bounds, or a live referent. *)
+let reduce_caller_field_copy (poq: po_query_int) call source length n =
+  let ctxt = call#get_context in
+  let entry_parameter root =
+    let root =
+      if poq#env#is_memory_address root then
+        match poq#env#get_memory_address root with
+        | mem, NoOffset -> (match mem#get_base with CBaseVar (v, _) -> v | _ -> root)
+        | _ -> root
+      else root in
+    poq#env#is_initial_parameter_value root
+    && let param, offset = poq#env#get_initial_parameter_vinfo root in
+       param.vparam > 0 && offset = NoOffset in
+  let rec pointer_root = function
+    | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) ->
+       pointer_root e
+    | BinOp ((PlusPI | IndexPI), e, _, _) -> pointer_root e
+    | Lval (Var (_, vid), NoOffset) ->
+       (match poq#env#get_varinfo vid with
+        | Ok vi when not vi.vglob && not vi.vaddrof && vi.vattr = []
+                     && is_pointer_type (fenv#get_type_unrolled vi.vtype)
+                     && not (is_volatile_type (fenv#get_type_unrolled vi.vtype)) ->
+           let slot = poq#env#mk_program_var vi NoOffset CHLanguage.NUM_VAR_TYPE in
+           List.exists (fun (inv: invariant_int) ->
+               inv#applies_to_var slot
+               && match inv#expr with
+                  | Some (XVar root) -> entry_parameter root
+                  | _ -> false) (poq#get_context_invariants ctxt)
+        | _ -> false)
+    | _ -> false in
+  let rec field = function
+    | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) -> field e
+    | AddrOf ((Mem base, Field _) as lv) when pointer_root base ->
+       (match type_of_lval poq#fenv lv with
+        | Ok typ -> (match sizeof poq typ with Some size -> n#leq size | _ -> false)
+        | _ -> false)
+    | _ -> false in
+  match literal_value poq length with
+  | Some (XConst (IntConst width)) when n#gt numerical_zero && n#equal width && field source ->
+     let predicate = PInitializedRange (source, length) in
+     let location = call#get_location in
+     poq#add_local_spo location ctxt predicate;
+     Some (DReduced ([], [LocalAssumption predicate]),
+           "memcpy destination read requires " ^ n#toString
+           ^ " initialized source bytes at copy on line " ^ string_of_int location.line)
+  | _ -> None
+
 let prove_memcpy_read poq sequence (read: lval) =
   match memcpy_call poq sequence with
   | Some (origin, call) ->
@@ -1420,7 +1469,11 @@ let prove_memcpy_read poq sequence (read: lval) =
                       | Some deps -> Some (deps,
                           "memcpy source bytes initialized at call; copied "
                           ^ n#toString ^ " bytes cover destination read")
-                      | _ -> None)
+                      | _ ->
+                         (match sizeof poq dtyp with
+                          | Some size when n#leq size ->
+                             reduce_caller_field_copy poq call source length n
+                          | _ -> None))
                   | _ -> None)
               | _ -> None)
           | _ -> None)

@@ -122,3 +122,5 @@ val select_target_po:
 
 
 val located_po_to_string: CCHPreTypes.proof_obligation_int -> string
+
+val check_open_copy_source: ?line:int -> string -> CCHPreTypes.proof_obligation_int -> unit
