@@ -148,6 +148,64 @@ let guarded_outputs_enabled : (string, bool) Hashtbl.t = Hashtbl.create 17
 let guarded_output_contexts : (string, (int, bool) Hashtbl.t) Hashtbl.t =
   Hashtbl.create 17
 
+(* A guarded output region is a value captured at one acyclic call site.
+   It is not a malloc return, nor a claim of fresh/disjoint physical storage.
+   Only an actual function-scope void* output slot and literal positive byte
+   capacity are supported. Casts do not change the actual slot's C type. *)
+let guarded_buffer_output (env: c_environment_int) (call: direct_callsite_int) =
+  let fname = call#get_callee.vname in
+  if Hashtbl.find_opt local_alias_enabled env#get_functionname <> Some true
+     || not (CCHFileContract.file_contract#has_function_contract fname) then None else
+  let predicates = List.filter (function XBufferOnReturn _ -> true | _ -> false)
+      (CCHFileContract.file_contract#get_function_contract fname)#get_postconditions in
+  let args = call#get_arguments in
+  let argument n = if n > 0 && n <= List.length args then Some (List.nth args (n-1)) else None in
+  let rec slot = function
+    | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) -> slot e
+    | AddrOf (Var (_, vid), NoOffset) ->
+       (match List.find_opt (fun vi -> vi.vid = vid && not vi.vglob && vi.vattr = [])
+                  env#get_fdecls#get_locals with
+        | Some vi -> (match fenv#get_type_unrolled vi.vtype with
+            | TPtr (TVoid _, []) -> Some (vi, NoOffset)
+            | _ -> None)
+        | _ -> None)
+    | _ -> None in
+  let query = object method fenv = env#get_fdecls end in
+  match predicates with
+  | [XBufferOnReturn (_, _, ArgAddressedValue
+       (ArgValue (ParFormal n, ArgNoOffset), ArgNoOffset), size) as predicate] ->
+     let capacity = match size with
+       | NumConstant n -> Some (XConst (IntConst n))
+       | ArgValue (ParFormal m, ArgNoOffset) -> Option.bind (argument m) (literal_value query)
+       | _ -> None in
+     (match Option.bind (argument n) slot, capacity with
+      | Some (vi, off), Some (XConst (IntConst capacity)) when capacity#gt numerical_zero ->
+         let origin = env#mk_function_sideeffect_value call#get_location call#get_context
+             call#get_callee (List.map (fun _ -> None) args) n vi.vtype in
+         Some (vi, off, origin, capacity, predicate)
+      | _ -> None)
+  | _ -> None
+
+let guarded_buffer_origin (env: c_environment_int) v =
+  List.find_map (fun call -> match guarded_buffer_output env call with
+      | Some (_, _, origin, capacity, predicate) when origin#equal v ->
+         Some (call, capacity, predicate)
+      | _ -> None) (proof_scaffolding#get_direct_callsites env#get_functionname)
+
+let allocation_context (env: c_environment_int) v =
+  if env#is_function_return_value v then env#get_callvar_context v else
+    match guarded_buffer_origin env v with
+    | Some (call, _, _) -> call#get_context
+    | _ -> failwith "Unsupported allocation origin"
+
+let capture_guarded_buffer_output (env: c_environment_int) ctxt =
+  if not (proof_scaffolding#has_direct_callsite env#get_functionname ctxt) then [] else
+    match guarded_buffer_output env (proof_scaffolding#get_direct_callsite env#get_functionname ctxt) with
+    | Some (vi, off, origin, _, _) ->
+       [CCHCommand.make_c_cmd (CHLanguage.ASSIGN_NUM
+           (env#mk_program_var vi off CHLanguage.NUM_VAR_TYPE, CHLanguage.NUM_VAR origin))]
+    | _ -> []
+
 let local_byte_range_variable (env: c_environment_int) vi =
   env#mk_augmentation_variable "$initialized-bytes$" "local-byte-range"
     vi.vid CHLanguage.SYM_VAR_TYPE
@@ -158,7 +216,8 @@ let allocated_byte_range_variable (env: c_environment_int) ctxt =
 
 let allocated_byte_range_variables (env: c_environment_int) =
   List.filter_map (fun call ->
-      if call#get_header = "lib:stdlib" && call#get_callee.vname = "malloc" then
+      if (call#get_header = "lib:stdlib" && call#get_callee.vname = "malloc")
+         || Option.is_some (guarded_buffer_output env call) then
         Some (allocated_byte_range_variable env call#get_context)
       else None) (proof_scaffolding#get_direct_callsites env#get_functionname)
 
@@ -168,7 +227,8 @@ let allocated_live_variable (env: c_environment_int) ctxt =
 
 let allocated_live_variables (env: c_environment_int) =
   List.filter_map (fun call ->
-      if call#get_header = "lib:stdlib" && call#get_callee.vname = "malloc" then
+      if (call#get_header = "lib:stdlib" && call#get_callee.vname = "malloc")
+         || Option.is_some (guarded_buffer_output env call) then
         Some (allocated_live_variable env call#get_context)
       else None) (proof_scaffolding#get_direct_callsites env#get_functionname)
 
@@ -626,10 +686,9 @@ let context_local_value (poq: po_query_int) ctxt = function
       | _ -> None)
   | _ -> None
 
-(* A malloc call site is a region identity only within an acyclic function.
-   Its literal capacity is captured at allocation, never read from a later
-   descriptor. Output-parameter/pool allocators and zero-size allocations are
-   deliberately not inferred from a pointer value. *)
+(* Supported allocation origins are captured only within acyclic functions.
+   Literal capacity belongs to the original malloc call or guarded output
+   contract, never a later descriptor. Zero/dynamic sizes remain unsupported. *)
 let allocated_origin (env: c_environment_int) value =
   let root = match value with
     | XVar v when env#is_function_return_value v -> Some v
@@ -637,8 +696,11 @@ let allocated_origin (env: c_environment_int) value =
        (match env#get_memory_address v with
         | mem, NoOffset -> (match mem#get_base with CBaseVar (v, _) -> Some v | _ -> None)
         | _ -> None)
-    | _ -> None in
+    | XVar v when env#is_fixed_value v -> Some v
+  | _ -> None in
   match root with
+  | Some v when Option.is_some (guarded_buffer_origin env v) ->
+     Option.map (fun (_, capacity, _) -> v, capacity) (guarded_buffer_origin env v)
   | Some v when env#is_function_return_value v
                 && Hashtbl.find_opt local_alias_enabled env#get_functionname = Some true ->
      let ctxt = env#get_callvar_context v in
@@ -697,7 +759,7 @@ let memset_allocated_byte_range (env: c_environment_int) get_value args =
          let marker = new CHLanguage.symbol_t
              ~atts:[first#toString; count#toString] "allocated-memset-bytes" in
          [CCHCommand.make_c_cmd (CHLanguage.ASSIGN_SYM
-             (allocated_byte_range_variable env (env#get_callvar_context v), CHLanguage.SYM marker))]
+             (allocated_byte_range_variable env (allocation_context env v), CHLanguage.SYM marker))]
       | _ -> [])
   | _ -> []
 
@@ -722,31 +784,38 @@ let prove_allocated_bytes (poq: po_query_int) ctxt address count =
             && (match leaf with Some width -> count#leq width | _ -> true) ->
      let width = match span with Some n -> n | _ -> count in
      if (first#add width)#gt capacity then None else
-     (* Check variables carry the guard-refined value-set fact even when the
-        original slot retains its coarser may-be-null value. Match the same
-        exact allocation base, with zero offset, rather than an arbitrary
-        nonnull pointer in this context. *)
-     let origins = List.filter_map (fun (inv: invariant_int) -> match inv#get_fact with
-         | NonRelationalFact (_, FBaseOffsetValue (_, base, Some a, Some b, false))
-              when a#equal numerical_zero && b#equal numerical_zero ->
-            (match allocated_origin poq#env base with
-             | Some (other, _) when other#equal v -> Some inv#index
-             | _ -> None)
-         | _ -> None) facts in
-     if origins = [] then None else
-     let livevar = allocated_live_variable poq#env (poq#env#get_callvar_context v) in
+     let permission = match guarded_buffer_origin poq#env v with
+       | Some (call, _, (XBufferOnReturn (op, bound, _, _) as predicate)) ->
+          Option.map (fun guard -> guard, [PostAssumption (call#get_callee.vid, predicate)])
+            (guarded_return_dependency poq ctxt
+               (CCHContext.ccontexts#index_context call#get_context) call#get_callee.vid op bound)
+       | Some _ -> None
+       | _ ->
+          (* malloc needs a nonnull value-set fact for the exact captured base. *)
+          let origins = List.filter_map (fun (inv: invariant_int) -> match inv#get_fact with
+              | NonRelationalFact (_, FBaseOffsetValue (_, base, Some a, Some b, false))
+                   when a#equal numerical_zero && b#equal numerical_zero ->
+                 (match allocated_origin poq#env base with
+                  | Some (other, _) when other#equal v -> Some inv#index
+                  | _ -> None)
+              | _ -> None) facts in
+          let pcs, _ = poq#get_postconditions v in
+          if origins = [] || not (List.exists (fun (p, _) -> p = XNewMemory ReturnValue) pcs)
+          then None else
+          (match poq#get_function_return_value_buffer_size v with
+           | Some (assumptions, XConst (IntConst n)) when n#equal capacity ->
+              let callee = poq#env#get_callvar_callee v in
+              Some (origins, PostAssumption (callee.vid, XNewMemory ReturnValue) :: assumptions)
+           | _ -> None) in
+     let livevar = allocated_live_variable poq#env (allocation_context poq#env v) in
      let live = List.find_opt (fun (inv: invariant_int) -> match inv#get_fact with
          | NonRelationalFact (var, FInitializedSet syms) when var#equal livevar ->
             syms <> [] && List.for_all (fun s ->
                 s#getBaseName = "allocated-live" && s#getAttributes = []) syms
          | _ -> false) facts in
-     if Option.is_none live then None else
-     (* Library allocation and extent assumptions remain explicit. *)
-     let pcs, _ = poq#get_postconditions v in
-     if not (List.exists (fun (p, _) -> p = XNewMemory ReturnValue) pcs) then None else
-     (match poq#get_function_return_value_buffer_size v with
-      | Some (assumptions, XConst (IntConst n)) when n#equal capacity ->
-         let variable = allocated_byte_range_variable poq#env (poq#env#get_callvar_context v) in
+     (match permission, live with
+      | Some (origins, assumptions), Some live ->
+         let variable = allocated_byte_range_variable poq#env (allocation_context poq#env v) in
          List.find_map (fun (inv: invariant_int) -> match inv#get_fact with
              | NonRelationalFact (var, FInitializedSet syms) when var#equal variable && syms <> [] ->
                 let covers s = match s#getBaseName, s#getAttributes with
@@ -757,9 +826,7 @@ let prove_allocated_bytes (poq: po_query_int) ctxt address count =
                           && (first#add width)#leq (a#add b) with _ -> false)
                   | _ -> false in
                 if List.for_all covers syms then
-                  let callee = poq#env#get_callvar_callee v in
-                  Some (DEnvC (inv#index :: (Option.get live)#index :: (origins @ !aliases),
-                      PostAssumption (callee.vid, XNewMemory ReturnValue) :: assumptions))
+                  Some (DEnvC (inv#index :: live#index :: (origins @ !aliases), assumptions))
                 else None
              | _ -> None) facts
       | _ -> None)

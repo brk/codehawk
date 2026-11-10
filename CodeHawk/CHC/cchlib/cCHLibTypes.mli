@@ -506,6 +506,11 @@ type xpredicate_t =
   (** [return op constant] implies initialization of the denoted lval.
       This grants no initialization or preservation on other returns. *)
 
+  | XBufferOnReturn of binop * numerical_t * s_term_t * s_term_t
+  (** [return op constant] implies that the output pointer lval is initialized,
+      nonnull and points to a live region of at least the given byte capacity.
+      No payload initialization, disjointness or failure preservation follows. *)
+
   | XInitializedRange of s_term_t * s_term_t
   (** term pointed to is initialized for t2 length *)
 

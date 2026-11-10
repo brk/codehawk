@@ -405,7 +405,8 @@ object (self)
       let memory_havoc =
         if has_complete_write_footprint fname then [] else
           [make_c_cmd (ABSTRACT_VARS env#get_memory_variables)] in
-      Ok (argassigns @ [callop; assertfail] @ memory_havoc @ [sideeffects] @ rcode)
+      Ok (argassigns @ [callop; assertfail] @ memory_havoc @ [sideeffects]
+          @ CCHMemoryInitialization.capture_guarded_buffer_output env context @ rcode)
 
   method private set_indirect_call vinfo =
     if proof_scaffolding#has_indirect_callsite env#get_functionname context then
@@ -1488,6 +1489,10 @@ object (self)
             && proof_scaffolding#has_direct_callsite env#get_functionname context
             && (proof_scaffolding#get_direct_callsite env#get_functionname context)
                  #get_header = "lib:stdlib" then
+           CCHMemoryInitialization.start_allocated_lifetime env context
+         else if proof_scaffolding#has_direct_callsite env#get_functionname context
+                 && Option.is_some (CCHMemoryInitialization.guarded_buffer_output env
+                      (proof_scaffolding#get_direct_callsite env#get_functionname context)) then
            CCHMemoryInitialization.start_allocated_lifetime env context
          else [] in
        let initialized =

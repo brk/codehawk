@@ -197,6 +197,8 @@ object (self)
       | XInitialized t -> (tags, [term t])
       | XInitializedOnReturn (op, n, t) ->
          (tags @ [binop_mfts#ts op; n#toString], [term t])
+      | XBufferOnReturn (op, n, t, size) ->
+         (tags @ [binop_mfts#ts op; n#toString], [term t; term size])
       | XInitializedRange (t1, t2) -> (tags, [term t1; term t2])
       | XInitializesExternalState (t1, t2) -> (tags, [term t1; term t2])
       | XInvalidated t -> (tags, [term t])
@@ -257,6 +259,8 @@ object (self)
     | "i" -> XInitialized (term 0)
     | "ior" -> XInitializedOnReturn
                    (binop_mfts#fs (t 1), mkNumericalFromString (t 2), term 0)
+    | "bor" -> XBufferOnReturn
+                   (binop_mfts#fs (t 1), mkNumericalFromString (t 2), term 0, term 1)
     | "ies" -> XInitializesExternalState (term 0, term 1)
     | "ir" -> XInitializedRange (term 0, term 1)
     | "ifs" -> XInputFormatString (term 0)

@@ -19,8 +19,11 @@
         cCHPOCheckGuardPrecisionTest
         cCHPOCheckDescriptorGetterTest
         cCHPOCheckNullCastTest
+        cCHPOCheckGuardedRegionsTest
         )
   (deps
+        testinputs/PGuardedRegions/guarded_regions.cch.tar.gz
+        testinputs/PGuardedRegions/guarded_regions_c.xml
         testinputs/PNullCast/null_cast.cch.tar.gz
         testinputs/PNullCast/null_cast_c.xml
         testinputs/PDescriptorGetter/descriptor_getter.cch.tar.gz

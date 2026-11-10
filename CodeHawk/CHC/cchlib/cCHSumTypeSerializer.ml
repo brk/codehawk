@@ -435,6 +435,7 @@ object
     | XHeapAddress _ -> "ha"
     | XInitialized _ -> "i"
     | XInitializedOnReturn _ -> "ior"
+    | XBufferOnReturn _ -> "bor"
     | XInitializedRange _ -> "ir"
     | XInitializesExternalState _ -> "ies"
     | XInputFormatString _ -> "ifs"
