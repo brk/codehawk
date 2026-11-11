@@ -245,7 +245,7 @@ object
            (loc:location) (ctxt:program_context_int) (exp:exp option) =
     let ictxt = ccontexts#index_context ctxt in
     let returnsite = new returnsite_t pod loc ctxt exp in
-    H.add returnsites ictxt returnsite
+    H.replace returnsites ictxt returnsite
 
   method get_postconditions =
     List.map id#get_xpredicate postconditions#toList
@@ -287,9 +287,12 @@ object
 
   method read_xml (node:xml_element_int) =
     try
+      H.clear returnsites;
       List.iter (fun rnode ->
           let r = read_xml_returnsite rnode pod in
           let ictxt = ccontexts#index_context r#get_context in
+          if H.mem returnsites ictxt then
+            raise (CCHFailure (LBLOCK [STR "Duplicate return context in snapshot: "; INT ictxt]));
           H.add returnsites ictxt r) (node#getTaggedChildren "rs")
     with
     | Failure s ->

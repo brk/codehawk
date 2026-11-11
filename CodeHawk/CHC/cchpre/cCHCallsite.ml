@@ -319,7 +319,7 @@ object
            (args:exp list) =
     let ictxt = ccontexts#index_context ctxt in
     let callsite = new direct_callsite_t pod loc ctxt header callee args in
-    H.add directcalls ictxt callsite
+    H.replace directcalls ictxt callsite
 
   method add_indirect_call
            (loc:location)
@@ -329,7 +329,7 @@ object
            (args:exp list) =
     let ictxt = ccontexts#index_context ctxt in
     let callsite = new indirect_callsite_t pod loc ctxt header callee args in
-    H.add indirectcalls ictxt callsite
+    H.replace indirectcalls ictxt callsite
 
   method create_contract_proof_obligations = ()
 
@@ -400,15 +400,21 @@ object
     let getcc tag = (node#getTaggedChild tag)#getTaggedChildren in
     try
       begin
+        H.clear directcalls;
+        H.clear indirectcalls;
         (if hasc "direct-calls" then
            List.iter (fun dnode ->
                let d = read_xml_direct_callsite dnode pod in
                let ictxt = ccontexts#index_context d#get_context in
+               if H.mem directcalls ictxt then
+                 raise (CCHFailure (LBLOCK [STR "Duplicate direct-call context in snapshot: "; INT ictxt]));
                H.add directcalls ictxt d) (getcc "direct-calls" "dc"));
         (if hasc "indirect-calls" then
            List.iter (fun inode ->
                let i = read_xml_indirect_callsite inode pod in
                let ictxt = ccontexts#index_context i#get_context in
+               if H.mem indirectcalls ictxt then
+                 raise (CCHFailure (LBLOCK [STR "Duplicate indirect-call context in snapshot: "; INT ictxt]));
                H.add indirectcalls ictxt i) (getcc "indirect-calls" "ic"))
       end
     with

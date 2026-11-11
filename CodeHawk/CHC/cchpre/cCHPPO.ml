@@ -67,7 +67,7 @@ object (self)
                STR "; ";
                ctxt#toPretty]) in
     let ppo = mk_ppo pod ppotype in
-    H.add table index ppo
+    H.replace table index ppo
 
   method add_lib_ppo
            (loc:location) (ctxt:program_context_int) (p:po_predicate_t)
@@ -75,7 +75,7 @@ object (self)
     let ppotype = PPOlib (loc,ctxt,p,fname,pre) in
     let index = pod#index_ppo_type ppotype in
     let ppo = mk_ppo pod ppotype in
-    H.add table index ppo
+    H.replace table index ppo
 
   method get_ppos = H.fold (fun _ v r -> v :: r) table []
 
@@ -98,8 +98,13 @@ object (self)
            end) self#get_ppos)
 
   method read_xml (node:xml_element_int) =
+    (* This is a complete snapshot, not another layer of bindings. Retaining
+     * old bindings multiplies obligations on every in-process reload. *)
+    H.clear table;
     List.iter (fun pnode ->
         let ppo = read_xml_ppo pnode pod in
+        if H.mem table ppo#index then
+          raise (CCHFailure (LBLOCK [STR "Duplicate primary proof id in snapshot: "; INT ppo#index]));
         H.add table ppo#index ppo) (node#getTaggedChildren "ppo")
 
 end

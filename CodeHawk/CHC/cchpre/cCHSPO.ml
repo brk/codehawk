@@ -117,6 +117,8 @@ object (self)
   method private read_xml_local_spos (node:xml_element_int) =
     List.iter (fun snode ->
         let spo = read_xml_local_spo snode pod in
+        if H.mem localspos spo#index then
+          raise (CCHFailure (LBLOCK [STR "Duplicate local proof id in snapshot: "; INT spo#index]));
         H.add localspos spo#index spo) (node#getTaggedChildren "po")
 
   method write_xml (node:xml_element_int) =
@@ -139,6 +141,7 @@ object (self)
     let hasc = node#hasOneTaggedChild in
     try
       begin
+        H.clear localspos;
         (if hasc "localspos" then
            self#read_xml_local_spos (getc "localspos"));
         callsite_manager#read_xml (getc "callsites");
