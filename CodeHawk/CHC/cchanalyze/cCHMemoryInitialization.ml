@@ -1646,7 +1646,7 @@ let memcpy_call poq sequence =
     if call#get_header = "lib:string" then Some (origin, call) else None
   else None
 
-(* An exact copy from caller storage can reduce to an initialized-byte
+(* An exact copy from caller storage or a shared field can reduce to an initialized-byte
    requirement at the copy. The alias is used to select this case, never as
    evidence of byte contents, bounds, or a live referent. *)
 let reduce_caller_copy (poq: po_query_int) call source length n =
@@ -1685,6 +1685,41 @@ let reduce_caller_copy (poq: po_query_int) call source length n =
         | Ok typ -> (match sizeof poq typ with Some size -> n#leq size | _ -> false)
         | _ -> false)
     | _ -> false in
+  (* A global descriptor selects a requirement at this call, not an entry
+     premise or a stable table image. Later descriptor writes cannot change
+     the point at which this local supporting obligation is checked. *)
+  let rec global_pointer_root = function
+    | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) ->
+       (match type_of_exp poq#fenv e with
+        | Ok source when is_pointer_type (fenv#get_type_unrolled source) -> global_pointer_root e
+        | _ -> false)
+    | BinOp ((PlusPI | IndexPI), base, _, _) -> global_pointer_root base
+    | (Lval (Var (_, vid), _) as e) ->
+       (match poq#env#get_varinfo vid, type_of_exp poq#fenv e with
+        | Ok vi, Ok typ when vi.vglob && vi.vattr = []
+             && not (is_volatile_type (fenv#get_type_unrolled vi.vtype))
+             && is_pointer_type (fenv#get_type_unrolled typ)
+             && not (is_volatile_type (fenv#get_type_unrolled typ)) -> true
+        | _ -> false)
+    | _ -> false in
+  let rec global_field = function
+    | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) ->
+       (match type_of_exp poq#fenv e with
+        | Ok source when is_pointer_type (fenv#get_type_unrolled source) -> global_field e
+        | _ -> false)
+    | AddrOf ((Mem base, Field _) as lv) when global_pointer_root base ->
+       (match get_pointer_expr_target_type poq#fenv base, type_of_lval poq#fenv lv with
+        | Ok parent, Ok typ when CCHTypesSize.has_ordinary_layout fenv parent
+             && not (range_type_volatile [] parent) && not (range_type_volatile [] typ) ->
+           (match sizeof poq typ with Some size -> n#leq size | _ -> false)
+        | _ -> false)
+    | _ -> false in
+  let certified_global_field =
+    match Hashtbl.find_opt local_function_bodies poq#fname with
+    | Some fn ->
+       List.exists (function Attr ("codehawk_no_global_pragmas_v1", []) -> true | _ -> false)
+         fn.sbody.battrs && global_field source
+    | _ -> false in
   let rec parameter_object = function
     | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) ->
        parameter_object e
@@ -1696,7 +1731,7 @@ let reduce_caller_copy (poq: po_query_int) call source length n =
     | _ -> false in
   match literal_value poq length with
   | Some (XConst (IntConst width)) when n#gt numerical_zero && n#equal width
-       && (field source || parameter_object source) ->
+       && (field source || parameter_object source || certified_global_field) ->
      let predicate = PInitializedRange (source, length) in
      let location = call#get_location in
      poq#add_local_spo location ctxt predicate;

@@ -1,6 +1,8 @@
 (tests
   (names
         cCHProofReloadTest
+        cCHPOCheckGlobalFieldCopyTest
+        cCHPOCheckGlobalFieldLegacyTest
         cCHPOCheckParameterEntryTest
         cCHPOCheckParameterEntryLegacyTest
         cCHPOCheckEntryPrefixFrameTest
@@ -42,6 +44,10 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PGlobalFieldCopy/global_field_copy.cch.tar.gz
+        testinputs/PGlobalFieldCopy/global_field_copy_c.xml
+        testinputs/PGlobalFieldLegacy/global_field_legacy.cch.tar.gz
+        testinputs/PGlobalFieldLegacy/global_field_legacy_c.xml
         testinputs/PParameterEntry/parameter_entry_requirement.cch.tar.gz
         testinputs/PParameterEntry/parameter_entry_requirement_c.xml
         testinputs/PParameterEntryLegacy/parameter_entry_legacy.cch.tar.gz
