@@ -1562,6 +1562,61 @@ let prove_entry_initialized_bytes (poq: po_query_int) ctxt address requested =
       | _ -> None)
   | _ -> None
 
+(* Infer only a required scalar/union parameter prefix, not table contents.
+   The caller must establish it. Authored contracts are left unchanged, and a
+   write/call before the read prevents using an entry requirement at that read. *)
+let mandatory_entry_instruction (poq: po_query_int) target =
+  let found = ref false in
+  let rec block ctxt b = List.for_all (fun stmt ->
+      let ctxt = ctxt#add_stmt stmt.sid in
+      match stmt.skind with
+      | Instr instructions ->
+         List.iteri (fun index _ ->
+             if (ctxt#add_instr index)#get_cfg_context#index = target#get_cfg_context#index
+             then found := true) instructions;
+         true
+      | Block inner -> block ctxt inner
+      | _ -> false) b.bstmts in
+  match Hashtbl.find_opt local_function_bodies poq#fname with
+  | Some fn -> ignore (block (CCHContext.mk_program_context ()) fn.sbody); !found
+  | _ -> false
+
+let parameter_initialized_requirement (poq: po_query_int) ctxt address length =
+  if CCHFileContract.file_contract#has_function_contract poq#fname then None else
+  let rec parameter = function
+    | CastE (target, value) when is_pointer_type (fenv#get_type_unrolled target) ->
+       (match type_of_exp poq#fenv value with
+        | Ok source when is_pointer_type (fenv#get_type_unrolled source) -> parameter value
+        | _ -> None)
+    | Lval (Var (_, vid), NoOffset) ->
+       (match poq#env#get_varinfo vid with
+        | Ok vi when vi.vparam > 0 && not vi.vglob && not vi.vaddrof && vi.vattr = []
+                     && not (is_volatile_type (fenv#get_type_unrolled vi.vtype)) ->
+           (match fenv#get_type_unrolled vi.vtype with
+            | TPtr (target, _) ->
+               let target = fenv#get_type_unrolled target in
+               let scalar = match target with
+                 | TInt _ | TFloat _ -> true
+                 | TComp (key, _) -> not (fenv#get_comp key).cstruct
+                 | _ -> false in
+               if scalar && not (range_type_volatile [] target)
+                  && CCHTypesSize.has_ordinary_layout fenv target
+               then Option.map (fun size -> vi, size) (sizeof poq target) else None
+            | _ -> None)
+        | _ -> None)
+    | _ -> None in
+  match parameter address, Option.bind (literal_value poq length) constant with
+  | Some (vi, size), Some count when count#gt numerical_zero && count#leq size
+       && count#leq (range_of_type poq#fenv (TInt (IInt, [])))#max
+       && mandatory_entry_instruction poq ctxt
+       && preserves_entry_bytes poq ctxt ->
+     let predicate = PInitializedRange
+         (Lval (Var (vi.vname, vi.vid), NoOffset), make_constant_exp count) in
+     (match CCHPOPredicate.po_predicate_to_xpredicate poq#fenv predicate with
+      | Ok (XInitializedRange (ArgValue (ParFormal _, ArgNoOffset), NumConstant _)) -> Some predicate
+      | _ -> None)
+  | _ -> None
+
 let prove_initialized_range poq ctxt address length =
   let entry = Option.bind (literal_value poq length) constant in
   match prove_entry_initialized_bytes poq ctxt address entry with
@@ -1682,10 +1737,19 @@ let prove_memcpy_read poq sequence (read: lval) =
                           "memcpy source bytes initialized at call; copied "
                           ^ n#toString ^ " bytes cover destination read")
                       | _ ->
-                         (match sizeof poq dtyp with
-                          | Some size when n#leq size ->
-                             reduce_caller_copy poq call source length n
-                          | _ -> None))
+                         (match Option.bind (literal_value poq length) constant with
+                          | Some captured when captured#equal n ->
+                             (match parameter_initialized_requirement poq call#get_context source length with
+                              | Some predicate -> Some (DEnvC ([], [ApiAssumption predicate]),
+                                  "memcpy requires initialized parameter bytes at entry, preserved to the copy")
+                              | _ ->
+                                 (match sizeof poq dtyp with
+                                  | Some size when n#leq size -> reduce_caller_copy poq call source length n
+                                  | _ -> None))
+                          | _ ->
+                             (match sizeof poq dtyp with
+                              | Some size when n#leq size -> reduce_caller_copy poq call source length n
+                              | _ -> None)))
                   | _ -> None)
               | _ -> None)
           | _ -> None)

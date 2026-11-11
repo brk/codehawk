@@ -377,7 +377,10 @@ object (self)
     r
 
   method check_delegation =
-    match invs1 with
+    let ctxt = poq#get_proof_obligation#get_context in
+    match CCHMemoryInitialization.parameter_initialized_requirement poq ctxt e1 e2 with
+    | Some predicate -> poq#delegate_to_api predicate []
+    | _ -> match invs1 with
     | [] -> false
     | _ ->
        List.fold_left (fun acc inv ->

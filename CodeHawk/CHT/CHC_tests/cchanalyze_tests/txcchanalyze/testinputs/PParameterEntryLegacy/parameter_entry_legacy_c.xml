@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<c-analysis>
+  <cfile name="parameter_entry_legacy">
+    <functions>
+      <function name="authored_short">
+        <parameters><par name="source" nr="1" /></parameters>
+        <preconditions>
+          <pre><math><apply><initialized-range /><ci>source</ci><cn>2</cn></apply></math></pre>
+        </preconditions>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

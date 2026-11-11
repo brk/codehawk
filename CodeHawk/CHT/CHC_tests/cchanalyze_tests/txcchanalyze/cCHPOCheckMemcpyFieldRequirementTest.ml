@@ -24,12 +24,18 @@ let () =
     selected in
   List.iter (fun (name, line) ->
       List.iter (CU.check_open_copy_source ~line name) (reads name))
-    ["copy_field", 17; "copy_field_alias", 25;
-     "copy_scalar_parameter", 62; "copy_union_parameter", 75];
+    ["copy_field", 17; "copy_field_alias", 25];
+  List.iter (fun name -> List.iter (fun po ->
+      match po#get_dependencies with
+      | Some (DEnvC (_, [ApiAssumption (PInitializedRange
+          (Lval (Var ("source", _), NoOffset), Const (CInt (n, _, _))))]))
+           when po#is_safe && n = 4L -> ()
+      | _ -> failwith (name ^ ": missing exact conditional parameter byte requirement"))
+      (reads name)) ["copy_scalar_parameter"; "copy_union_parameter"];
   List.iter (fun name ->
       if List.exists (fun po -> po#is_safe) (reads name) then
         failwith (name ^ ": unsupported copy was reduced or discharged"))
     ["short_copy"; "narrow_field"; "lost_origin"; "uninitialized_local";
      "short_parameter_copy"; "narrow_parameter_copy"; "replaced_parameter"];
   CU.analysis_take_down "memcpy_field_requirement";
-  print_endline "memcpy sources: four reductions with open requirements at their copies"
+  print_endline "memcpy sources: open field requirements and exact conditional parameter bytes"

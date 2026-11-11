@@ -1,5 +1,7 @@
 (tests
   (names
+        cCHPOCheckParameterEntryTest
+        cCHPOCheckParameterEntryLegacyTest
         cCHPOCheckEntryPrefixFrameTest
         cCHPOCheckEntryPrefixLegacyTest
         cCHPOCheckEntryInitializedImageTest
@@ -39,6 +41,10 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PParameterEntry/parameter_entry_requirement.cch.tar.gz
+        testinputs/PParameterEntry/parameter_entry_requirement_c.xml
+        testinputs/PParameterEntryLegacy/parameter_entry_legacy.cch.tar.gz
+        testinputs/PParameterEntryLegacy/parameter_entry_legacy_c.xml
         testinputs/PEntryPrefixFrame/copy_prefix_frame.cch.tar.gz
         testinputs/PEntryPrefixFrame/copy_prefix_frame_c.xml
         testinputs/PEntryPrefixLegacy/entry_prefix_legacy.cch.tar.gz
