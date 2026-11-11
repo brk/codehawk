@@ -1366,10 +1366,12 @@ let addressed_source_at (poq: po_query_int) ctxt expression =
   | Some _ as result -> result
   | _ -> resolve_local_region poq#env (context_local_value poq ctxt) expression
 
-(* An entry initialization contract is usable only while its bytes are
-   preserved. This certificate deliberately accepts a whole-function frame:
-   direct automatic stores and exact library copies into automatic objects. *)
-let preserves_entry_bytes (poq: po_query_int) =
+(* An entry initialization contract needs a frame up to its actual use. A
+   whole-function frame also covers loops and gotos. The additional prefix
+   certificate accepts only structured, acyclic control flow, joining every
+   continuing predecessor and stopping paths at Return. It cannot omit a
+   later opaque call that might reach the use through a backedge. *)
+let preserves_entry_bytes (poq: po_query_int) target_context =
   let ordinary_local vid =
     match poq#env#get_varinfo vid with
     | Ok vi when vi.vparam = 0 && vi.vstorage <> Static
@@ -1404,11 +1406,48 @@ let preserves_entry_bytes (poq: po_query_int) =
       | If (_, yes, no, _) -> block yes && block no
       | Block inner | Loop (inner, _, _, _) | Switch (_, inner, _, _) -> block inner
       | _ -> false) b.bstmts in
+  let rec acyclic_block b = List.for_all (fun s -> match s.skind with
+      | Instr instructions -> List.for_all (function Set _ | Call _ -> true | _ -> false) instructions
+      | Return _ -> true
+      | If (_, yes, no, _) -> acyclic_block yes && acyclic_block no
+      | Block inner -> acyclic_block inner
+      | _ -> false) b.bstmts in
+  let prefix fn =
+    let contexts = Hashtbl.create 17 in
+    let record ctxt state =
+      Hashtbl.replace contexts ctxt#get_cfg_context#index (state = Some true) in
+    let join left right = match left, right with
+      | None, state | state, None -> state
+      | Some left, Some right -> Some (left && right) in
+    let rec walk_block ctxt state b =
+      List.fold_left (fun state stmt -> walk_stmt (ctxt#add_stmt stmt.sid) state stmt)
+        state b.bstmts
+    and walk_stmt ctxt state stmt = match stmt.skind with
+      | Instr instructions ->
+         snd (List.fold_left (fun (index, state) ins ->
+             (* Call-entry requirements use the state before the instruction. *)
+             record (ctxt#add_instr index) state;
+             let next = match state with
+               | None -> None
+               | Some safe -> Some (safe && instruction ins) in
+             index + 1, next) (0, state) instructions)
+      | Return _ -> record ctxt#add_return state; None
+      | If (_, yes, no, _) ->
+         record ctxt#add_if_expr state;
+         join (walk_block ctxt#add_if_then state yes)
+           (walk_block ctxt#add_if_else state no)
+      | Block inner -> walk_block ctxt state inner
+      | _ -> Some false in
+    ignore (walk_block (CCHContext.mk_program_context ()) (Some true) fn.sbody);
+    Hashtbl.find_opt contexts target_context#get_cfg_context#index = Some true in
   match Hashtbl.find_opt local_function_bodies poq#fname with
   | Some fn ->
      List.exists (function Attr ("codehawk_no_global_pragmas_v1", []) -> true | _ -> false)
        fn.sbody.battrs
-     && block fn.sbody
+     && (block fn.sbody
+         || (List.exists (function Attr ("codehawk_nested_scope_metadata_v1", []) -> true | _ -> false)
+               fn.sbody.battrs
+             && acyclic_block fn.sbody && prefix fn))
   | _ -> false
 
 let entry_index_upper (poq: po_query_int) ctxt e =
@@ -1507,7 +1546,7 @@ let prove_entry_initialized_bytes (poq: po_query_int) ctxt address requested =
              | XInitializedRange (ArgValue (ParFormal n, ArgNoOffset), NumConstant len) as p
                   when n = parameter && start#geq numerical_zero && (start#add bytes)#leq len ->
                 (match CCHPOPredicate.xpredicate_to_po_predicate poq#fenv p with
-                 | Ok pred when preserves_entry_bytes poq ->
+                 | Ok pred when preserves_entry_bytes poq ctxt ->
                     Some (DEnvC (deps, [ApiAssumption pred]))
                  | _ -> None)
              | _ -> None) premises

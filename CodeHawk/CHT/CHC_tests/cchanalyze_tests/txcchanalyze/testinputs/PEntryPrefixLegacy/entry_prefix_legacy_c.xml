@@ -1,0 +1,255 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="entry_prefix_legacy">
+    <functions>
+      <function name="pure_copy">
+        <parameters>
+          <par name="source" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="event_before_copy">
+        <parameters>
+          <par name="source" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="event_after_copy">
+        <parameters>
+          <par name="source" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="read_before_event">
+        <parameters>
+          <par name="source" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="dirty_returning_path">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="flag" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="dirty_joining_path">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="flag" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="dirty_loop">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="repeat" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="dirty_backwards_goto">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="repeat" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="overwrite_source_before_copy">
+        <parameters>
+          <par name="source" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="asm_after_copy">
+        <parameters>
+          <par name="source" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="formal_replaced_before_copy">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="other" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="formal_replaced_after_copy">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="other" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="contracted_copy">
+        <parameters>
+          <par name="source" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="bounded_field_before_event">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="index" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4928</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="bounded_field_after_event">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="index" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4928</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

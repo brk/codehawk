@@ -1,5 +1,7 @@
 (tests
   (names
+        cCHPOCheckEntryPrefixFrameTest
+        cCHPOCheckEntryPrefixLegacyTest
         cCHPOCheckEntryInitializedImageTest
         cCHPOCheckMemcpyFieldRequirementTest
         cCHPOCheckLocalSettersTest
@@ -37,6 +39,10 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PEntryPrefixFrame/copy_prefix_frame.cch.tar.gz
+        testinputs/PEntryPrefixFrame/copy_prefix_frame_c.xml
+        testinputs/PEntryPrefixLegacy/entry_prefix_legacy.cch.tar.gz
+        testinputs/PEntryPrefixLegacy/entry_prefix_legacy_c.xml
         testinputs/PEntryInitializedImage/entry_initialized_image.cch.tar.gz
         testinputs/PEntryInitializedImage/entry_initialized_image_c.xml
         testinputs/PPragmaEntryImage/pragma_entry_image.cch.tar.gz
