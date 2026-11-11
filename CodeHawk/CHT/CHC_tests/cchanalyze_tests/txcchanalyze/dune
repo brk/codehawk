@@ -1,5 +1,7 @@
 (tests
   (names
+        cCHPOCheckCorrelatedUnionTest
+        cCHPOCheckCorrelatedUnionLegacyTest
         cCHPOCheckCopyRangeFrameTest
         cCHPOCheckCopyRangeLegacyTest
         cCHProofReloadTest
@@ -46,6 +48,10 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PCorrelatedUnion/correlated_union_bytes.cch.tar.gz
+        testinputs/PCorrelatedUnion/correlated_union_bytes_c.xml
+        testinputs/PCorrelatedUnionLegacy/correlated_union_legacy.cch.tar.gz
+        testinputs/PCorrelatedUnionLegacy/correlated_union_legacy_c.xml
         testinputs/PCopyRangeFrame/copy_range_frame.cch.tar.gz
         testinputs/PCopyRangeFrame/copy_range_frame_c.xml
         testinputs/PCopyRangeLegacy/copy_range_legacy.cch.tar.gz

@@ -1857,10 +1857,241 @@ let prove_copied_local_range (poq: po_query_int) target address length =
       | _ -> None)
   | _ -> None
 
+(* A later case can recover the byte width selected by an earlier switch only
+   when its controlling expression is unchanged. Use the actual CFG, including
+   first-switch fallthrough, and reject a queried case with another predecessor.
+   No global image facts or initialized source memory are introduced. *)
+let prove_correlated_union_range (poq: po_query_int) target address length =
+  let point_index ctxt = ctxt#get_cfg_context#index in
+  let target_index = point_index target in
+  let calls = proof_scaffolding#get_direct_callsites poq#fname in
+  let standard_copy ctxt id = List.exists (fun call ->
+      point_index call#get_context = point_index ctxt && call#get_callee.vid = id
+      && call#get_callee.vname = "memcpy" && call#get_header = "lib:string"
+      && not (fenv#is_application_function id)) calls in
+  match addressed_local address, Option.bind (literal_value poq length) constant,
+        Hashtbl.find_opt local_function_bodies poq#fname with
+  | Some (Var (_, vid), NoOffset), Some requested, Some fn when requested#gt numerical_zero ->
+     (match poq#env#get_varinfo vid with
+      | Ok vi when vi.vparam = 0 && not vi.vglob && vi.vstorage <> Static && vi.vattr = []
+           && stack_address_lifetime_known poq#env vi
+           && not (range_type_volatile [] vi.vtype)
+           && CCHTypesSize.has_ordinary_layout fenv vi.vtype ->
+         let union_key = match fenv#get_type_unrolled vi.vtype with
+           | TComp (key, _) when not (fenv#get_comp key).cstruct -> Some key | _ -> None in
+         let certified name = List.exists (function Attr (n, []) -> n = name | _ -> false) fn.sbody.battrs in
+         if union_key = None || not (certified "codehawk_no_global_pragmas_v1"
+             && certified "codehawk_nested_scope_metadata_v1") then None else
+         let nodes = Hashtbl.create 31 and query = ref None in
+         let rec collect ctxt block = List.for_all (fun stmt ->
+             let ctxt = ctxt#add_stmt stmt.sid in
+             if Hashtbl.mem nodes stmt.sid then false else begin
+             Hashtbl.add nodes stmt.sid (ctxt, stmt);
+             let labels_ok = List.for_all (function
+                 | Case (e, _) -> Option.is_some (Option.bind (literal_value poq e) constant)
+                 | CaseRange _ -> false | _ -> true) stmt.labels in
+             labels_ok && match stmt.skind with
+             | Instr instructions -> List.for_all (fun (i, ins) ->
+                 if point_index (ctxt#add_instr i) = target_index then
+                   query := (if i = 0 then Some stmt else None);
+                 match ins with Set _ | Call _ | VarDecl _ -> true | _ -> false)
+                 (List.mapi (fun i ins -> i, ins) instructions)
+             | If (_, yes, no, _) -> collect ctxt#add_if_then yes && collect ctxt#add_if_else no
+             | Switch (_, body, _, _) | Block body -> collect ctxt body
+             | Return _ | Break _ -> true
+             | _ -> false end) block.bstmts in
+         if not (collect (CCHContext.mk_program_context ()) fn.sbody) then None else
+         let unique xs = List.sort_uniq compare xs = List.sort compare xs in
+         let consistent = Hashtbl.fold (fun id (_, stmt) ok -> ok
+             && unique stmt.preds && unique stmt.succs
+             && List.for_all (fun next -> match Hashtbl.find_opt nodes next with
+                 | Some (_, s) -> List.mem id s.preds | _ -> false) stmt.succs
+             && List.for_all (fun prev -> match Hashtbl.find_opt nodes prev with
+                 | Some (_, s) -> List.mem id s.succs | _ -> false) stmt.preds) nodes true in
+         if not consistent then None else
+         (match !query with
+          | Some q when List.length q.preds = 1 ->
+             let _, parent = Hashtbl.find nodes (List.hd q.preds) in
+             (match parent.skind with
+              | Switch (selector, _, cases, _) when List.mem q.sid cases ->
+                 let values = List.filter_map (function
+                     | Case (e, _) -> Option.bind (literal_value poq e) constant | _ -> None) q.labels in
+                 let only_cases = List.for_all (function Case _ -> true | _ -> false) q.labels in
+                 let refs = ref [] in
+                 let ordinary typ = not (range_type_volatile [] typ)
+                     && CCHTypesSize.has_ordinary_layout fenv typ in
+                 let rec stable_expression e =
+                   (match type_of_exp poq#fenv e with Ok typ -> ordinary typ | _ -> false)
+                   && match e with
+                   | Const (CInt _) -> true
+                   | Lval lv -> stable_lvalue lv
+                   | CastE (typ, e) ->
+                      (match type_of_exp poq#fenv e with
+                       | Ok source ->
+                          (is_pointer_type (fenv#get_type_unrolled typ)
+                           = is_pointer_type (fenv#get_type_unrolled source)) && stable_expression e
+                       | _ -> false)
+                   | BinOp ((PlusPI | IndexPI | PlusA | MinusA), a, b, _) ->
+                      stable_expression a && stable_expression b
+                   | _ -> false
+                 and stable_lvalue (host, off) =
+                   (match host with
+                    | Var (_, id) -> refs := id :: !refs;
+                       (match poq#env#get_varinfo id with
+                        | Ok info -> info.vattr = [] && ordinary info.vtype | _ -> false)
+                    | Mem e -> stable_expression e
+                       && (match get_pointer_expr_target_type poq#fenv e with Ok typ -> ordinary typ | _ -> false))
+                   && stable_offset off
+                 and stable_offset = function
+                   | NoOffset -> true | Field (_, rest) -> stable_offset rest
+                   | Index (e, rest) -> stable_expression e && stable_offset rest in
+                 let selector_kind = match type_of_exp poq#fenv selector with
+                   | Ok typ -> (match fenv#get_type_unrolled typ with TInt _ -> Some typ | _ -> None)
+                   | _ -> None in
+                 if values = [] || not only_cases || selector_kind = None
+                    || not (stable_expression selector) then None else
+                 let selector_range = range_of_type poq#fenv (Option.get selector_kind) in
+                 if not (List.for_all (fun n -> n#geq selector_range#min && n#leq selector_range#max) values)
+                 then None else
+                 let rec mentions id = function
+                   | AddrOf (Var (_, other), _) | StartOf (Var (_, other), _) when id = other -> true
+                   | AddrOf lv | StartOf lv | Lval lv -> mentions_lv id lv
+                   | CastE (_, e) | UnOp (_, e, _) | SizeOfE e | AlignOfE e -> mentions id e
+                   | BinOp (_, a, b, _) -> mentions id a || mentions id b
+                   | Const _ | SizeOf _ | AlignOf _ -> false
+                   | _ -> true
+                 and mentions_lv id (host, off) =
+                   (match host with Var _ -> false | Mem e -> mentions id e) || mentions_off id off
+                 and mentions_off id = function
+                   | NoOffset -> false | Field (_, rest) -> mentions_off id rest
+                   | Index (e, rest) -> mentions id e || mentions_off id rest in
+                 let nonescaping id = Hashtbl.fold (fun _ (ctxt, stmt) ok -> ok && match stmt.skind with
+                     | Instr ins -> List.for_all (fun (i, ins) -> match ins with
+                         | Set (lv, e, _) -> not (mentions_lv id lv || mentions id e)
+                         | Call (lhs, callee, args, _) ->
+                            not (mentions id callee)
+                            && (match lhs with None -> true | Some lv -> not (mentions_lv id lv))
+                            && (not (List.exists (mentions id) args)
+                                || point_index (ctxt#add_instr i) = target_index
+                                || (match lhs, callee with
+                                    | None, Lval (Var (_, fnid), NoOffset) -> standard_copy (ctxt#add_instr i) fnid
+                                    | _ -> false))
+                         | VarDecl _ -> true | _ -> false) (List.mapi (fun i ins -> i, ins) ins)
+                     | If (e, _, _, _) | Switch (e, _, _, _) -> not (mentions id e)
+                     | Return (Some e, _) -> not (mentions id e)
+                     | _ -> true) nodes true in
+                 let private_local id = match poq#env#get_varinfo id with
+                   | Ok info -> info.vparam = 0 && not info.vglob && info.vstorage <> Static
+                       && info.vattr = [] && stack_address_lifetime_known poq#env info
+                       && ordinary info.vtype && nonescaping id
+                   | _ -> false in
+                 if not (private_local vid) then None else
+                 let reaching = Hashtbl.create 31 in
+                 let rec backwards id = if not (Hashtbl.mem reaching id) then begin
+                     Hashtbl.add reaching id ();
+                     List.iter backwards (snd (Hashtbl.find nodes id)).preds end in
+                 backwards q.sid;
+                 let preserves_selector ctxt = function
+                   | Set ((Var (_, id), off), _, _) -> not (List.mem id !refs)
+                       && private_local id
+                       && (match poq#env#get_varinfo id with
+                           | Ok info -> Option.is_some (contained_subobject poq info.vtype off) | _ -> false)
+                   | VarDecl (info, _) -> not (List.mem info.vid !refs)
+                   | Call (None, Lval (Var (_, id), NoOffset), [dest; _; count], _) when standard_copy ctxt id ->
+                      (match addressed_local dest, Option.bind (literal_value poq count) constant with
+                       | Some ((Var (_, local), NoOffset) as lv), Some bytes
+                            when not (List.mem local !refs) && private_local local ->
+                          (match type_of_lval poq#fenv lv with
+                           | Ok typ -> (match sizeof poq typ with Some size ->
+                               bytes#geq numerical_zero && bytes#leq size | _ -> false)
+                           | _ -> false)
+                       | _ -> false)
+                   | _ -> false in
+                 let frame = Hashtbl.fold (fun id (ctxt, stmt) ok -> ok &&
+                     (not (Hashtbl.mem reaching id) || id = q.sid || match stmt.skind with
+                      | Instr ins -> List.for_all (fun (i, ins) -> preserves_selector (ctxt#add_instr i) ins)
+                          (List.mapi (fun i ins -> i, ins) ins)
+                      | _ -> true)) nodes true in
+                 if not frame then None else
+                 let establishes = function
+                   | Set ((Var (_, id), Field ((field, key), NoOffset)), source, _) when id = vid && Some key = union_key ->
+                      let field = List.find_opt (fun f -> f.fname = field) (fenv#get_comp key).cfields in
+                      (match field with
+                       | Some field when field.fbitfield = None && ordinary field.ftype ->
+                          (match fenv#get_type_unrolled field.ftype, sizeof poq field.ftype with
+                           | TInt (kind, _), Some size when size#geq requested ->
+                              (match source with
+                               | Lval (Var (_, input), NoOffset) ->
+                                  (match poq#env#get_varinfo input with
+                                   | Ok info when info.vparam > 0 && info.vattr = [] && ordinary info.vtype ->
+                                      (match fenv#get_type_unrolled info.vtype with TInt (ik, _) -> ik = kind | _ -> false)
+                                   | _ -> false)
+                               | _ -> (match Option.bind (literal_value poq source) constant with
+                                   | Some n -> let range = range_of_type poq#fenv field.ftype in
+                                      n#geq range#min && n#leq range#max | _ -> false))
+                           | _ -> false)
+                       | _ -> false)
+                   | _ -> false in
+                 let check_value value =
+                   let incoming = Hashtbl.create 31 and queue = Queue.create () in
+                   let found = ref None and valid = ref true in
+                   let propagate id state = match Hashtbl.find_opt incoming id with
+                     | None -> Hashtbl.add incoming id state; Queue.add id queue
+                     | Some old when old && not state -> Hashtbl.replace incoming id false; Queue.add id queue
+                     | _ -> () in
+                   (match fn.sbody.bstmts with first :: _ -> propagate first.sid false | _ -> ());
+                   while not (Queue.is_empty queue) do
+                     let id = Queue.take queue in
+                     let _, stmt = Hashtbl.find nodes id in
+                     let state = Hashtbl.find incoming id in
+                     if id = q.sid then found := Some state;
+                     let after = match stmt.skind with
+                       | Instr ins -> List.fold_left (fun state ins ->
+                           if establishes ins then true else match ins with
+                           | Set ((Var (_, other), _), _, _) when other <> vid -> state
+                           | VarDecl (info, _) when info.vid <> vid -> state
+                           | Call (None, _, [dest; _; _], _) ->
+                              (match addressed_local dest with Some (Var (_, other), _) when other <> vid -> state | _ -> false)
+                           | _ -> false) state ins
+                       | _ -> state in
+                     let successors = match stmt.skind with
+                       | Switch (e, _, cases, _) when exp_compare e selector = 0 ->
+                          let case_nodes = List.filter_map (fun sid ->
+                              Option.map snd (Hashtbl.find_opt nodes sid)) cases in
+                          if List.length case_nodes <> List.length cases then valid := false;
+                          (* Case labels undergo conversion to the promoted
+                             selector type. Reject non-value-preserving cases
+                             rather than comparing their unconverted integers. *)
+                          if not (List.for_all (fun s -> List.for_all (function
+                              | Case (label, _) ->
+                                 (match Option.bind (literal_value poq label) constant with
+                                  | Some n -> n#geq selector_range#min && n#leq selector_range#max
+                                  | _ -> false)
+                              | _ -> true) s.labels) case_nodes) then valid := false;
+                          let matched = List.filter (fun s -> List.exists (function Case (e, _) ->
+                              (match Option.bind (literal_value poq e) constant with Some n -> n#equal value | _ -> false)
+                              | _ -> false) s.labels) case_nodes in
+                          let selected = if matched <> [] then matched else List.filter (fun s ->
+                              List.exists (function Default _ -> true | _ -> false) s.labels) case_nodes in
+                          (match List.sort_uniq compare (List.map (fun s -> s.sid) selected) with
+                           | [next] when List.mem next stmt.succs -> [next]
+                           | _ -> valid := false; [])
+                       | _ -> stmt.succs in
+                     List.iter (fun next -> if Hashtbl.mem reaching next then propagate next after) successors
+                   done;
+                   !valid && !found = Some true in
+                 if List.for_all check_value values then Some (DLocal []) else None
+              | _ -> None)
+          | _ -> None)
+      | _ -> None)
+  | _ -> None
+
 let prove_initialized_range poq ctxt address length =
   match prove_initialized_range_facts poq ctxt address length with
   | Some _ as proof -> proof
-  | _ -> prove_copied_local_range poq ctxt address length
+  | _ -> match prove_copied_local_range poq ctxt address length with
+     | Some _ as proof -> proof
+     | _ -> prove_correlated_union_range poq ctxt address length
 
 let prove_memcpy_read poq sequence (read: lval) =
   match memcpy_call poq sequence with

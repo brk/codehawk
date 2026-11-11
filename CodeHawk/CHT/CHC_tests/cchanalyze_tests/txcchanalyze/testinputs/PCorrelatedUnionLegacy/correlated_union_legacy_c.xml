@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<c-analysis>
+  <cfile name="correlated_union_legacy">
+    <functions>
+      <function name="consume">
+        <parameters><par name="value" nr="1" /></parameters>
+        <preconditions><pre><math><apply><initialized-range /><ci>value</ci><cn>4</cn></apply></math></pre></preconditions>
+        <sideeffects><sideeffect><math><apply><block-write /><ci>value</ci><cn>4</cn></apply></math></sideeffect></sideeffects>
+      </function>
+      <function name="consume_word">
+        <parameters><par name="value" nr="1" /></parameters>
+        <preconditions><pre><math><apply><initialized-range /><ci>value</ci><cn>4</cn></apply></math></pre></preconditions>
+        <sideeffects><sideeffect><math><apply><block-write /><ci>value</ci><cn>4</cn></apply></math></sideeffect></sideeffects>
+      </function>
+      <function name="consume_pair">
+        <parameters><par name="first" nr="1" /><par name="second" nr="2" /></parameters>
+        <preconditions>
+          <pre><math><apply><initialized-range /><ci>first</ci><cn>4</cn></apply></math></pre>
+          <pre><math><apply><initialized-range /><ci>second</ci><cn>4</cn></apply></math></pre>
+        </preconditions>
+        <sideeffects>
+          <sideeffect><math><apply><block-write /><ci>first</ci><cn>4</cn></apply></math></sideeffect>
+          <sideeffect><math><apply><block-write /><ci>second</ci><cn>4</cn></apply></math></sideeffect>
+        </sideeffects>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>
