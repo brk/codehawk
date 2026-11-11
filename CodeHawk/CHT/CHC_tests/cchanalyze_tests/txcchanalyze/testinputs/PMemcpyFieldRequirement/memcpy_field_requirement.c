@@ -55,3 +55,47 @@ uint32_t uninitialized_local(void)
     memcpy(&result, &entry.comparison, sizeof(result));
     return result;
 }
+
+float copy_scalar_parameter(const float *source)
+{
+    float result;
+    memcpy(&result, source, sizeof(result));
+    return result;
+}
+
+union word
+{
+    uint32_t bits;
+    float value;
+};
+
+float copy_union_parameter(const union word *source)
+{
+    float result;
+    memcpy(&result, source, sizeof(result));
+    return result;
+}
+
+float short_parameter_copy(const float *source)
+{
+    float result;
+    memcpy(&result, source, 2);
+    return result;
+}
+
+float narrow_parameter_copy(const uint8_t *source)
+{
+    float result;
+    memcpy(&result, source, sizeof(result));
+    return result;
+}
+
+extern const float *opaque_scalar(void);
+
+float replaced_parameter(const float *source)
+{
+    float result;
+    source = opaque_scalar();
+    memcpy(&result, source, sizeof(result));
+    return result;
+}

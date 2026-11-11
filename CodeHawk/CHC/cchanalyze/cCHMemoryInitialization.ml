@@ -1543,10 +1543,10 @@ let memcpy_call poq sequence =
     if call#get_header = "lib:string" then Some (origin, call) else None
   else None
 
-(* An exact field copy from caller storage can reduce to an initialized-byte
+(* An exact copy from caller storage can reduce to an initialized-byte
    requirement at the copy. The alias is used to select this case, never as
    evidence of byte contents, bounds, or a live referent. *)
-let reduce_caller_field_copy (poq: po_query_int) call source length n =
+let reduce_caller_copy (poq: po_query_int) call source length n =
   let ctxt = call#get_context in
   let entry_parameter root =
     let root =
@@ -1582,8 +1582,18 @@ let reduce_caller_field_copy (poq: po_query_int) call source length n =
         | Ok typ -> (match sizeof poq typ with Some size -> n#leq size | _ -> false)
         | _ -> false)
     | _ -> false in
+  let rec parameter_object = function
+    | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) ->
+       parameter_object e
+    | (Lval (Var _, NoOffset) as pointer) when pointer_root pointer ->
+       (match get_pointer_expr_target_type poq#fenv pointer with
+        | Ok typ when not (range_type_volatile [] typ) ->
+           (match sizeof poq typ with Some size -> n#leq size | _ -> false)
+        | _ -> false)
+    | _ -> false in
   match literal_value poq length with
-  | Some (XConst (IntConst width)) when n#gt numerical_zero && n#equal width && field source ->
+  | Some (XConst (IntConst width)) when n#gt numerical_zero && n#equal width
+       && (field source || parameter_object source) ->
      let predicate = PInitializedRange (source, length) in
      let location = call#get_location in
      poq#add_local_spo location ctxt predicate;
@@ -1626,7 +1636,7 @@ let prove_memcpy_read poq sequence (read: lval) =
                       | _ ->
                          (match sizeof poq dtyp with
                           | Some size when n#leq size ->
-                             reduce_caller_field_copy poq call source length n
+                             reduce_caller_copy poq call source length n
                           | _ -> None))
                   | _ -> None)
               | _ -> None)

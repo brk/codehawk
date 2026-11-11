@@ -40,11 +40,12 @@ let () =
      "heap_partial_field_unknown"; "heap_arithmetic_slot_unknown";
      "heap_realloc_unknown"; "heap_reuse_bad"; "heap_external_allocator_unknown";
      "heap_no_guard_unknown"; "heap_nested_slot_unknown"; "heap_integer_cast_unknown";
-     "heap_zero_unknown"; "heap_external_unknown"; "heap_two_clears_unknown";
+     "heap_zero_unknown"; "heap_two_clears_unknown";
      "heap_size_captured_unknown"; "heap_reclear_after_free_bad";
      "heap_opaque_reclear_unknown"; "heap_entry_beyond_bad";
      "heap_indirect_reclear_unknown"; "heap_escaped_slot_unknown";
      "heap_branch_live_bad"; "heap_loop_unknown"; "heap_field_wide_bad"];
+  List.iter (CU.check_open_copy_source "heap_external_unknown") (reads "heap_external_unknown");
   List.iter (fun name ->
       let ranges = List.filter (fun po -> match po#get_predicate with
           | PInitializedRange _ -> true | _ -> false)
