@@ -24,6 +24,7 @@ let () =
       List.iter (fun po ->
           if po#is_safe then failwith (name ^ ": " ^ CU.located_po_to_string po)) ranges)
     ["pure_copy"; "read_before_event"; "dirty_returning_path";
-     "formal_replaced_after_copy"; "event_after_copy"; "bounded_field_before_event"];
+     "formal_replaced_after_copy"; "event_after_copy"; "bounded_field_before_event";
+     "copy_before_switch"];
   CU.analysis_take_down "entry_prefix_legacy";
   print_endline "entry prefixes: missing certificates leave source requirements open"

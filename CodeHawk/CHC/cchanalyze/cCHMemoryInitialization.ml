@@ -1408,8 +1408,9 @@ let preserves_entry_bytes (poq: po_query_int) target_context =
       | _ -> false) b.bstmts in
   let rec acyclic_block b = List.for_all (fun s -> match s.skind with
       | Instr instructions -> List.for_all (function Set _ | Call _ -> true | _ -> false) instructions
-      | Return _ -> true
+      | Return _ | Break _ -> true
       | If (_, yes, no, _) -> acyclic_block yes && acyclic_block no
+      | Switch (_, inner, _, _) -> acyclic_block inner
       | Block inner -> acyclic_block inner
       | _ -> false) b.bstmts in
   let prefix fn =
@@ -1436,6 +1437,14 @@ let preserves_entry_bytes (poq: po_query_int) target_context =
          record ctxt#add_if_expr state;
          join (walk_block ctxt#add_if_then state yes)
            (walk_block ctxt#add_if_else state no)
+      | Switch (_, inner, _, _) ->
+         record ctxt#add_switch_expr state;
+         (* A switch has only forward case entries and breaks, because the
+          * syntax certificate excludes loops, gotos and assembly. Facts at
+          * earlier instructions remain usable. Without modeling case entry
+          * and fallthrough, no prefix certificate is issued in or after it. *)
+         ignore (walk_block ctxt (Some false) inner);
+         (match state with None -> None | Some _ -> Some false)
       | Block inner -> walk_block ctxt state inner
       | _ -> Some false in
     ignore (walk_block (CCHContext.mk_program_context ()) (Some true) fn.sbody);

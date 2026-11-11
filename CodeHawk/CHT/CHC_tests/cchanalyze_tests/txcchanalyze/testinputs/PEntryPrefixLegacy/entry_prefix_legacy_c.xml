@@ -250,6 +250,57 @@
           </pre>
         </preconditions>
       </function>
+      <function name="copy_before_switch">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="command" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="dirty_switch_before_copy">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="command" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="dirty_switch_fallthrough">
+        <parameters>
+          <par name="source" nr="1" />
+          <par name="command" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>source</ci>
+                <cn>4</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
     </functions>
   </cfile>
 </c-analysis>

@@ -174,3 +174,48 @@ uint32_t bounded_field_after_event(const struct entry *source, unsigned index)
     memcpy(&result, &source[index].comparison, sizeof(result));
     return result;
 }
+
+uint32_t copy_before_switch(const uint32_t *source, unsigned command)
+{
+    uint32_t result;
+    memcpy(&result, source, sizeof(result));
+    switch (command)
+    {
+        case 0:
+            return result;
+        default:
+            event();
+            return 0;
+    }
+}
+
+uint32_t dirty_switch_before_copy(const uint32_t *source, unsigned command)
+{
+    uint32_t result;
+    switch (command)
+    {
+        case 0:
+            event();
+            break;
+        default:
+            break;
+    }
+    memcpy(&result, source, sizeof(result));
+    return result;
+}
+
+uint32_t dirty_switch_fallthrough(const uint32_t *source, unsigned command)
+{
+    uint32_t result;
+    switch (command)
+    {
+        case 0:
+            event();
+            /* fall through */
+        case 1:
+            memcpy(&result, source, sizeof(result));
+            return result;
+        default:
+            return 0;
+    }
+}

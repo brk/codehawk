@@ -47,7 +47,7 @@ let () =
           List.iter (expect name entry_dependency) (select name is_range);
           List.iter (expect name entry_dependency) (select name is_result))
         ["pure_copy"; "read_before_event"; "dirty_returning_path";
-         "formal_replaced_after_copy"; "bounded_field_before_event"];
+         "formal_replaced_after_copy"; "bounded_field_before_event"; "copy_before_switch"];
       List.iter (expect "event_after_copy" entry_dependency)
         (select "event_after_copy" is_range);
       (* Entry bytes do not preserve a copied local through a later opaque call. *)
@@ -57,7 +57,8 @@ let () =
           List.iter (expect name (fun po -> not po#is_safe)) (select name is_range);
           List.iter (CU.check_open_copy_source name) (select name is_result))
         ["event_before_copy"; "dirty_joining_path"; "overwrite_source_before_copy";
-         "asm_after_copy"; "formal_replaced_before_copy"; "bounded_field_after_event"];
+         "asm_after_copy"; "formal_replaced_before_copy"; "bounded_field_after_event";
+         "dirty_switch_before_copy"; "dirty_switch_fallthrough"];
       List.iter (fun name ->
           List.iter (expect name (fun po -> not po#is_safe)) (select name is_range);
           List.iter (expect name (fun po -> not po#is_safe)) (select name is_result))
