@@ -236,6 +236,7 @@ let save_xml_file f =
     let (target, absoluteTarget) = get_target_file_name () in
     let xmlfilename = absoluteTarget ^ "_cfile.xml"  in
     let dictionaryfilename = absoluteTarget ^ "_cdict.xml" in
+    let no_global_pragmas = not (List.exists (function GPragma _ -> true | _ -> false) f.globals) in
     let _ = (if !keepUnused then () else RmUnused.removeUnused f) in
     let _ = Cfg.computeFileCFG f in
     let fns =
@@ -246,8 +247,11 @@ let save_xml_file f =
        goblint_cil_nested attribute, so consumers can distinguish this output
        from older parser files that have already lost that information. *)
     let _ = List.iter (fun fn ->
-        fn.sbody.battrs <- Attr ("codehawk_nested_scope_metadata_v1", [])
-                          :: fn.sbody.battrs) fns in
+        let attrs = Attr ("codehawk_nested_scope_metadata_v1", []) :: fn.sbody.battrs in
+        (* The XML writer drops GPragma nodes. Without this marker, consumers
+           cannot assume ordinary aggregate layout for an older parser file. *)
+        fn.sbody.battrs <- if no_global_pragmas then
+            Attr ("codehawk_no_global_pragmas_v1", []) :: attrs else attrs) fns in
     let _ =
       log_info "Found %d function(s) [%s:%d]" (List.length fns) __FILE__ __LINE__ in
     let _ =

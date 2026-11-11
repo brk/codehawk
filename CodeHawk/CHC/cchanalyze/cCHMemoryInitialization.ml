@@ -1366,7 +1366,159 @@ let addressed_source_at (poq: po_query_int) ctxt expression =
   | Some _ as result -> result
   | _ -> resolve_local_region poq#env (context_local_value poq ctxt) expression
 
+(* An entry initialization contract is usable only while its bytes are
+   preserved. This certificate deliberately accepts a whole-function frame:
+   direct automatic stores and exact library copies into automatic objects. *)
+let preserves_entry_bytes (poq: po_query_int) =
+  let ordinary_local vid =
+    match poq#env#get_varinfo vid with
+    | Ok vi when vi.vparam = 0 && vi.vstorage <> Static
+                 && stack_address_lifetime_known poq#env vi && not vi.vglob ->
+       Some vi
+    | _ -> None in
+  let calls = proof_scaffolding#get_direct_callsites poq#fname in
+  let instruction = function
+    | Set ((Var (_, vid), off), _, _) ->
+       (match ordinary_local vid with
+        | Some vi -> CCHTypesSize.has_ordinary_layout fenv vi.vtype
+                     && Option.is_some (contained_subobject poq vi.vtype off)
+        | _ -> false)
+    | Call (None, Lval (Var ("memcpy", vid), NoOffset), [dest; _; length], _)
+         when not (fenv#is_application_function vid) && List.exists (fun call ->
+             call#get_callee.vid = vid && call#get_header = "lib:string") calls ->
+       (match addressed_local dest, literal_value poq length with
+        | Some ((Var (_, id), off) as lv), Some (XConst (IntConst n))
+             when n#geq numerical_zero ->
+           (match ordinary_local id with
+            | Some vi when CCHTypesSize.has_ordinary_layout fenv vi.vtype ->
+               (match contained_subobject poq vi.vtype off, type_of_lval poq#fenv lv with
+                | Some _, Ok typ ->
+                   (match sizeof poq typ with Some width -> n#leq width | _ -> false)
+                | _ -> false)
+            | _ -> false)
+        | _ -> false)
+    | _ -> false in
+  let rec block b = List.for_all (fun s -> match s.skind with
+      | Instr instructions -> List.for_all instruction instructions
+      | Return _ | Break _ | Continue _ | Goto _ -> true
+      | If (_, yes, no, _) -> block yes && block no
+      | Block inner | Loop (inner, _, _, _) | Switch (_, inner, _, _) -> block inner
+      | _ -> false) b.bstmts in
+  match Hashtbl.find_opt local_function_bodies poq#fname with
+  | Some fn ->
+     List.exists (function Attr ("codehawk_no_global_pragmas_v1", []) -> true | _ -> false)
+       fn.sbody.battrs
+     && block fn.sbody
+  | _ -> false
+
+let entry_index_upper (poq: po_query_int) ctxt e =
+  match literal_value poq e with
+  | Some (XConst (IntConst n)) when n#geq numerical_zero -> Some (n, [])
+  | _ ->
+     match e with
+     | Lval (Var (_, vid), NoOffset) ->
+        (match poq#env#get_varinfo vid with
+         | Ok vi when vi.vparam > 0 && not vi.vaddrof && vi.vattr = [] ->
+            (match fenv#get_type_unrolled vi.vtype with
+             | TInt (kind, _) when CCHTypesSize.has_ordinary_layout fenv vi.vtype ->
+                (* The frame forbids changing formals. Inspect the exact
+                   entry value as well as its current program variable. *)
+                let slot = poq#env#mk_program_var vi NoOffset CHLanguage.NUM_VAR_TYPE in
+                let facts = poq#get_context_invariants ctxt in
+                let bound (v, deps) =
+                  List.find_map (fun (inv: invariant_int) ->
+                      match inv#get_fact with
+                      | NonRelationalFact (vv, FIntervalValue (low, Some high))
+                           when vv#equal v && high#geq numerical_zero
+                             && (match low with
+                                 | Some n -> n#geq numerical_zero
+                                 | _ -> is_unsigned_type kind) ->
+                         Some (high, inv#index :: deps)
+                      | _ -> None) facts in
+                (match bound (slot, []) with
+                 | Some _ as result -> result
+                 | _ ->
+                    List.find_map (fun (inv: invariant_int) ->
+                        match inv#expr with
+                        | Some (XVar v) when inv#applies_to_var slot
+                                             && poq#env#is_initial_parameter_value v ->
+                           let param, off = poq#env#get_initial_parameter_vinfo v in
+                           if param.vid = vid && off = NoOffset
+                           then bound (v, [inv#index]) else None
+                        | _ -> None) facts)
+             | _ -> None)
+         | _ -> None)
+     | _ -> None
+
+let entry_field_offset typ key name =
+  match fenv#get_type_unrolled typ with
+  | TComp (k, _) when k = key && CCHTypesSize.has_ordinary_layout fenv typ ->
+     let comp = fenv#get_comp key in
+     List.find_map (fun field ->
+         if field.fname = name then
+           Option.map (fun n -> n, field.ftype)
+             (constant (CCHTypesSize.ordinary_field_offset fenv field))
+         else None) comp.cfields
+  | _ -> None
+
+let prove_entry_initialized_bytes (poq: po_query_int) ctxt address requested =
+  let contracts = CCHFileContract.file_contract in
+  if not (contracts#has_function_contract poq#fname) then None else
+  let premises = (contracts#get_function_contract poq#fname)#get_preconditions in
+  let rec field typ off =
+    match off with
+    | NoOffset -> Some numerical_zero
+    | Field ((name, key), tail) ->
+       Option.bind (entry_field_offset typ key name) (fun (offset, member) ->
+           Option.map (fun n -> offset#add n) (field member tail))
+    | _ -> None in
+  let rec region = function
+    | Lval (Var (_, vid), NoOffset) ->
+       (match poq#env#get_varinfo vid with
+        | Ok vi when vi.vparam > 0 && not vi.vaddrof && vi.vattr = []
+                     && is_pointer_type (fenv#get_type_unrolled vi.vtype) ->
+           Some (vi.vparam, numerical_zero, [])
+        | _ -> None)
+    | CastE (typ, e) when is_pointer_type (fenv#get_type_unrolled typ) ->
+       (match type_of_exp poq#fenv e with
+        | Ok source when is_pointer_type (fenv#get_type_unrolled source) -> region e
+        | _ -> None)
+    | BinOp ((PlusPI | IndexPI), base, index, _) ->
+       (match region base, entry_index_upper poq ctxt index,
+              get_pointer_expr_target_type poq#fenv base with
+        | Some (parameter, start, deps), Some (upper, bounds), Ok elem
+             when CCHTypesSize.has_ordinary_layout fenv elem ->
+           (match sizeof poq elem with
+            | Some stride when stride#gt numerical_zero ->
+               Some (parameter, start#add (upper#mult stride), deps @ bounds)
+            | _ -> None)
+        | _ -> None)
+    | AddrOf (Mem base, off) | StartOf (Mem base, off) ->
+       (match region base, get_pointer_expr_target_type poq#fenv base with
+        | Some (parameter, start, deps), Ok typ ->
+           Option.map (fun offset -> parameter, start#add offset, deps) (field typ off)
+        | _ -> None)
+    | _ -> None in
+  match requested with
+  | Some bytes when bytes#gt numerical_zero ->
+     (match region address with
+      | Some (parameter, start, deps) ->
+         List.find_map (function
+             | XInitializedRange (ArgValue (ParFormal n, ArgNoOffset), NumConstant len) as p
+                  when n = parameter && start#geq numerical_zero && (start#add bytes)#leq len ->
+                (match CCHPOPredicate.xpredicate_to_po_predicate poq#fenv p with
+                 | Ok pred when preserves_entry_bytes poq ->
+                    Some (DEnvC (deps, [ApiAssumption pred]))
+                 | _ -> None)
+             | _ -> None) premises
+      | _ -> None)
+  | _ -> None
+
 let prove_initialized_range poq ctxt address length =
+  let entry = Option.bind (literal_value poq length) constant in
+  match prove_entry_initialized_bytes poq ctxt address entry with
+  | Some _ as proof -> proof
+  | _ ->
   match addressed_source_at poq ctxt address,
         exact_local_length poq#env (context_local_value poq ctxt) length with
   | Some (lv, start), Some x ->
@@ -1463,7 +1615,9 @@ let prove_memcpy_read poq sequence (read: lval) =
                      (let source_bytes = match addressed_source_at poq call#get_context source with
                         | Some (slv, sstart) -> initialized_local_bytes ~start:sstart poq call#get_context slv n
                         | _ when n#gt numerical_zero ->
-                           prove_allocated_bytes poq call#get_context source (constant_count n)
+                           (match prove_allocated_bytes poq call#get_context source (constant_count n) with
+                            | Some _ as proof -> proof
+                            | _ -> prove_entry_initialized_bytes poq call#get_context source (Some n))
                         | _ -> None in
                       match source_bytes with
                       | Some deps -> Some (deps,

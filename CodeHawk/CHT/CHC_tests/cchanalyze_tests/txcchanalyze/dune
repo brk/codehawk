@@ -1,5 +1,6 @@
 (tests
   (names
+        cCHPOCheckEntryInitializedImageTest
         cCHPOCheckMemcpyFieldRequirementTest
         cCHPOCheckLocalSettersTest
         cCHPOCheckParameterRangesTest
@@ -36,6 +37,10 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PEntryInitializedImage/entry_initialized_image.cch.tar.gz
+        testinputs/PEntryInitializedImage/entry_initialized_image_c.xml
+        testinputs/PPragmaEntryImage/pragma_entry_image.cch.tar.gz
+        testinputs/PPragmaEntryImage/pragma_entry_image_c.xml
         testinputs/PMemcpyFieldRequirement/memcpy_field_requirement.cch.tar.gz
         testinputs/PLocalSetters/local_setters.cch.tar.gz
         testinputs/PLocalSetters/local_setters_c.xml

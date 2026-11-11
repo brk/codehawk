@@ -273,3 +273,37 @@ and offset_of_field_acc env ~(finfo:fieldinfo) ~(acc:offset_accumulator_t) : off
     oa_last_field_start = newStart;
     oa_last_field_width = ftypeByteSize
   }
+
+(* The layout calculator ignores attributes and does not lay out bitfields.
+   Use it as an exact offset/stride only for ordinary complete types. *)
+let has_ordinary_layout env typ =
+  let qualifiers = List.for_all (function
+      | Attr (("const" | "pconst"), []) -> true
+      | _ -> false) in
+  let rec ordinary seen typ =
+    match env#get_type_unrolled typ with
+    | TInt (_, attrs) | TFloat (_, attrs) | TPtr (_, attrs) -> qualifiers attrs
+    | TArray (element, Some (Const (CInt (length, _, _))), attrs) ->
+       length > 0L && qualifiers attrs && ordinary seen element
+    | TComp (key, attrs) when qualifiers attrs && not (List.mem key seen) ->
+       let comp = env#get_comp key in
+       comp.cattr = [] && comp.cfields <> [] &&
+       List.for_all (fun f ->
+           f.fbitfield = None && f.fattr = [] && ordinary (key :: seen) f.ftype)
+         comp.cfields
+    | _ -> false in
+  ordinary [] typ
+
+let ordinary_field_offset env (field: fieldinfo) =
+  let comp = env#get_comp field.fckey in
+  if not (has_ordinary_layout env (TComp (comp.ckey, []))) then
+    random_constant_expr
+  else if not comp.cstruct then
+    zero_constant_expr
+  else
+    let rec find acc = function
+      | [] -> random_constant_expr
+      | f :: rest ->
+         let acc = offset_of_field_acc env ~finfo:f ~acc in
+         if f.fname = field.fname then simplify_xpr acc.oa_last_field_start else find acc rest in
+    find start_oa comp.cfields

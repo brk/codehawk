@@ -45,3 +45,7 @@ open CCHLibTypes
 
 
 val byte_size_of_typ: file_environment_int -> typ -> xpr_t
+
+val has_ordinary_layout: file_environment_int -> typ -> bool
+
+val ordinary_field_offset: file_environment_int -> fieldinfo -> xpr_t

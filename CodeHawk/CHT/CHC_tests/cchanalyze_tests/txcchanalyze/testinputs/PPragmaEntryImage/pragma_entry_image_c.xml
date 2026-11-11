@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="pragma_entry_image">
+    <functions>
+      <function name="pragma_packed_image">
+        <parameters>
+          <par name="image" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1408</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

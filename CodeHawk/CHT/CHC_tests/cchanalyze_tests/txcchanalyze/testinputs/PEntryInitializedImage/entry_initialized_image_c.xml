@@ -1,0 +1,171 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<c-analysis>
+  <cfile name="entry_initialized_image">
+    <functions>
+      <function name="full_image">
+        <parameters>
+          <par name="image" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1408</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="bounded_image">
+        <parameters>
+          <par name="image" nr="1" />
+          <par name="index" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1408</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="short_image">
+        <parameters>
+          <par name="image" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1407</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="unbounded_image">
+        <parameters>
+          <par name="image" nr="1" />
+          <par name="index" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1408</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="opaque_frame">
+        <parameters>
+          <par name="image" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1408</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="write_frame">
+        <parameters>
+          <par name="image" nr="1" />
+          <par name="other" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1408</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="replaced_base">
+        <parameters>
+          <par name="image" nr="1" />
+          <par name="other" nr="2" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1408</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="loop_image">
+        <parameters>
+          <par name="image" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1408</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="prefix_field">
+        <parameters>
+          <par name="image" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1404</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+      <function name="packed_image">
+        <parameters>
+          <par name="image" nr="1" />
+        </parameters>
+        <preconditions>
+          <pre>
+            <math>
+              <apply>
+                <initialized-range />
+                <ci>image</ci>
+                <cn>1408</cn>
+              </apply>
+            </math>
+          </pre>
+        </preconditions>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>
