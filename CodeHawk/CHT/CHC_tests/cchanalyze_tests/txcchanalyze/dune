@@ -1,3 +1,11 @@
+(rule
+  (alias runtest)
+  (deps check_parser_cleanup.py testinputs/PCleanupRejected/cleanup_rejected.c)
+  (action
+    (run python3 %{dep:check_parser_cleanup.py}
+         %{exe:../../../../CHC/cchcil/cCHXParseFile.exe}
+         %{dep:testinputs/PCleanupRejected/cleanup_rejected.c})))
+
 (tests
   (names
         cCHPOCheckCorrelatedUnionTest

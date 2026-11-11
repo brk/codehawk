@@ -1881,6 +1881,7 @@ let prove_correlated_union_range (poq: po_query_int) target address length =
            | TComp (key, _) when not (fenv#get_comp key).cstruct -> Some key | _ -> None in
          let certified name = List.exists (function Attr (n, []) -> n = name | _ -> false) fn.sbody.battrs in
          if union_key = None || not (certified "codehawk_no_global_pragmas_v1"
+             && certified "codehawk_no_implicit_local_effects_v1"
              && certified "codehawk_nested_scope_metadata_v1") then None else
          let nodes = Hashtbl.create 31 and query = ref None in
          let rec collect ctxt block = List.for_all (fun stmt ->

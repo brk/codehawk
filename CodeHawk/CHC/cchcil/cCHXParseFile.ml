@@ -233,6 +233,16 @@ let cil_function_to_file target (f: fundec) (dir: string) =
 
 
 let save_xml_file f =
+    (* removeUnused can delete an unused local together with its GNU cleanup
+       attribute, without lowering the scope-exit call into CIL. Reject that
+       unsupported effect before optimization can erase the evidence. *)
+    let _ = List.iter (function
+        | GFun (fn, _) -> List.iter (fun local ->
+            if List.exists (function Attr (("cleanup" | "__cleanup__"), _) -> true | _ -> false)
+                local.vattr then
+              raise (CHFailure (LBLOCK [STR "Unsupported implicit cleanup effect in function ";
+                  STR fn.svar.vname; STR ", local "; STR local.vname]))) fn.slocals
+        | _ -> ()) f.globals in
     let (target, absoluteTarget) = get_target_file_name () in
     let xmlfilename = absoluteTarget ^ "_cfile.xml"  in
     let dictionaryfilename = absoluteTarget ^ "_cdict.xml" in
@@ -247,7 +257,8 @@ let save_xml_file f =
        goblint_cil_nested attribute, so consumers can distinguish this output
        from older parser files that have already lost that information. *)
     let _ = List.iter (fun fn ->
-        let attrs = Attr ("codehawk_nested_scope_metadata_v1", []) :: fn.sbody.battrs in
+        let attrs = Attr ("codehawk_no_implicit_local_effects_v1", [])
+            :: Attr ("codehawk_nested_scope_metadata_v1", []) :: fn.sbody.battrs in
         (* The XML writer drops GPragma nodes. Without this marker, consumers
            cannot assume ordinary aggregate layout for an older parser file. *)
         fn.sbody.battrs <- if no_global_pragmas then
