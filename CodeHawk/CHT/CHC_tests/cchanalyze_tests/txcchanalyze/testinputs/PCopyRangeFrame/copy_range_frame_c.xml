@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<c-analysis>
+  <cfile name="copy_range_frame">
+    <functions>
+      <function name="consume">
+        <parameters><par name="value" nr="1" /></parameters>
+        <preconditions><pre><math><apply><initialized-range /><ci>value</ci><cn>4</cn></apply></math></pre></preconditions>
+        <sideeffects><sideeffect><math><apply><block-write /><ci>value</ci><cn>4</cn></apply></math></sideeffect></sideeffects>
+      </function>
+    </functions>
+  </cfile>
+</c-analysis>

@@ -1617,7 +1617,7 @@ let parameter_initialized_requirement (poq: po_query_int) ctxt address length =
       | _ -> None)
   | _ -> None
 
-let prove_initialized_range poq ctxt address length =
+let prove_initialized_range_facts poq ctxt address length =
   let entry = Option.bind (literal_value poq length) constant in
   match prove_entry_initialized_bytes poq ctxt address entry with
   | Some _ as proof -> proof
@@ -1739,6 +1739,128 @@ let reduce_caller_copy (poq: po_query_int) call source length n =
            "memcpy destination read requires " ^ n#toString
            ^ " initialized source bytes at copy on line " ^ string_of_int location.line)
   | _ -> None
+
+(* Carry a copied automatic object's prefix to a later call entry. The CFG
+   joins all predecessors; a dirty fallthrough cannot borrow a sibling case's
+   copy. This deliberately excludes loops, gotos, assembly and nested locals.
+   Source bytes remain a requirement at the original copy, not an image axiom. *)
+let prove_copied_local_range (poq: po_query_int) target address length =
+  let target_index = target#get_cfg_context#index in
+  let calls = proof_scaffolding#get_direct_callsites poq#fname in
+  let standard_copy ctxt vid = List.find_opt (fun call ->
+      call#get_context#get_cfg_context#index = ctxt#get_cfg_context#index
+      && call#get_callee.vid = vid && call#get_callee.vname = "memcpy"
+      && call#get_header = "lib:string" && not (fenv#is_application_function vid)) calls in
+  match addressed_local address, Option.bind (literal_value poq length) constant,
+        Hashtbl.find_opt local_function_bodies poq#fname with
+  | Some (Var (_, vid), NoOffset), Some requested, Some fn when requested#gt numerical_zero ->
+     (match poq#env#get_varinfo vid with
+      | Ok vi when vi.vparam = 0 && not vi.vglob && vi.vstorage <> Static && vi.vattr = []
+           && stack_address_lifetime_known poq#env vi
+           && not (range_type_volatile [] vi.vtype)
+           && CCHTypesSize.has_ordinary_layout fenv vi.vtype ->
+         let flags = fn.sbody.battrs in
+         let certified name = List.exists (function Attr (n, []) -> n = name | _ -> false) flags in
+         if not (certified "codehawk_no_global_pragmas_v1"
+                 && certified "codehawk_nested_scope_metadata_v1") then None else
+         let rec mentions_address = function
+           | AddrOf (Var (_, id), _) | StartOf (Var (_, id), _) when id = vid -> true
+           | AddrOf lv | StartOf lv | Lval lv -> mentions_lval lv
+           | CastE (_, e) | UnOp (_, e, _) | SizeOfE e | AlignOfE e -> mentions_address e
+           | BinOp (_, a, b, _) -> mentions_address a || mentions_address b
+           | Const _ | SizeOf _ | AlignOf _ -> false
+           | _ -> true
+         and mentions_lval (host, off) =
+           (match host with Var _ -> false | Mem e -> mentions_address e) || mentions_offset off
+         and mentions_offset = function
+           | NoOffset -> false
+           | Field (_, rest) -> mentions_offset rest
+           | Index (e, rest) -> mentions_address e || mentions_offset rest in
+         let nodes = Hashtbl.create 31 in
+         let rec collect ctxt block = List.for_all (fun stmt ->
+             let ctxt = ctxt#add_stmt stmt.sid in
+             Hashtbl.replace nodes stmt.sid (ctxt, stmt);
+             match stmt.skind with
+             | Instr instructions -> List.for_all (fun (index, instruction) ->
+                 let point = ctxt#add_instr index in
+                 match instruction with
+                 | Set (lv, e, _) -> not (mentions_lval lv || mentions_address e)
+                 | Call (lhs, callee, args, _) ->
+                    not (mentions_address callee)
+                    && (match lhs with None -> true | Some lv -> not (mentions_lval lv))
+                    && (not (List.exists mentions_address args)
+                        || point#get_cfg_context#index = target_index
+                        || (match lhs, callee with
+                            | None, Lval (Var (_, id), NoOffset) -> Option.is_some (standard_copy point id)
+                            | _ -> false))
+                 | VarDecl _ -> true
+                 | _ -> false) (List.mapi (fun i ins -> i, ins) instructions)
+             | If (e, yes, no, _) -> not (mentions_address e)
+                 && collect ctxt#add_if_then yes && collect ctxt#add_if_else no
+             | Switch (e, body, _, _) -> not (mentions_address e) && collect ctxt body
+             | Block body -> collect ctxt body
+             | Return (e, _) -> (match e with None -> true | Some e -> not (mentions_address e))
+             | Break _ -> true
+             | _ -> false) block.bstmts in
+         if not (collect (CCHContext.mk_program_context ()) fn.sbody) then None else
+         let sorted = List.sort_uniq compare in
+         let consistent = Hashtbl.fold (fun id (_, stmt) ok -> ok
+             && List.for_all (fun next -> match Hashtbl.find_opt nodes next with
+                 | Some (_, successor) -> List.mem id successor.preds | _ -> false) stmt.succs
+             && List.for_all (fun previous -> match Hashtbl.find_opt nodes previous with
+                 | Some (_, predecessor) -> List.mem id predecessor.succs | _ -> false) stmt.preds
+             && sorted stmt.succs = List.sort compare stmt.succs
+             && sorted stmt.preds = List.sort compare stmt.preds) nodes true in
+         if not consistent then None else
+         let same left right = match left, right with
+           | None, None -> true
+           | Some a, Some b -> a#get_context#get_cfg_context#index = b#get_context#get_cfg_context#index
+           | _ -> false in
+         let join left right = if same left right then left else None in
+         let incoming = Hashtbl.create 31 and queue = Queue.create () in
+         let found = ref None in
+         let propagate id value = match Hashtbl.find_opt incoming id with
+           | None -> Hashtbl.add incoming id value; Queue.add id queue
+           | Some old -> let next = join old value in
+              if not (same old next) then begin Hashtbl.replace incoming id next; Queue.add id queue end in
+         let transfer ctxt state = function
+           | Set ((Var (_, id), _), _, _) when id <> vid -> state
+           | VarDecl (local, _) when local.vid <> vid -> state
+           | Call (None, Lval (Var (_, id), NoOffset), [dest; _; count], _) ->
+              (match standard_copy ctxt id, addressed_local dest,
+                     Option.bind (literal_value poq count) constant with
+               | Some call, Some (Var (_, target_vid), NoOffset), Some bytes when target_vid = vid ->
+                  (match sizeof poq vi.vtype with
+                   | Some size when bytes#geq requested && bytes#leq size -> Some call
+                   | _ -> None)
+               | Some _, Some (Var (_, other), _), _ when other <> vid -> state
+               | _ -> None)
+           | _ -> None in
+         (match fn.sbody.bstmts with first :: _ -> propagate first.sid None | _ -> ());
+         while not (Queue.is_empty queue) do
+           let id = Queue.take queue in
+           let ctxt, stmt = Hashtbl.find nodes id in
+           let state = Hashtbl.find incoming id in
+           let after = match stmt.skind with
+             | Instr instructions -> snd (List.fold_left (fun (index, state) ins ->
+                 let point = ctxt#add_instr index in
+                 if point#get_cfg_context#index = target_index then found := state;
+                 index + 1, transfer point state ins) (0, state) instructions)
+             | _ -> state in
+           List.iter (fun next -> propagate next after) stmt.succs
+         done;
+         Option.bind !found (fun call -> match call#get_arguments with
+             | [_; source; count] ->
+                Option.bind (Option.bind (literal_value poq count) constant) (fun bytes ->
+                    Option.map fst (reduce_caller_copy poq call source count bytes))
+             | _ -> None)
+      | _ -> None)
+  | _ -> None
+
+let prove_initialized_range poq ctxt address length =
+  match prove_initialized_range_facts poq ctxt address length with
+  | Some _ as proof -> proof
+  | _ -> prove_copied_local_range poq ctxt address length
 
 let prove_memcpy_read poq sequence (read: lval) =
   match memcpy_call poq sequence with

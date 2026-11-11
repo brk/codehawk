@@ -311,7 +311,10 @@ object (self)
     match CCHMemoryInitialization.prove_initialized_range poq ctxt e1 e2 with
     | Some deps ->
        begin
-         poq#record_safe_result deps "local source bytes are initialized";
+         let message = match deps with
+           | DReduced _ -> "copied local bytes require initialized source bytes at the original memcpy"
+           | _ -> "local source bytes are initialized" in
+         poq#record_safe_result deps message;
          true
        end
     | _ -> match self#unsigned_length_conflict with

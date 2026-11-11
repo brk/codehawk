@@ -1,5 +1,7 @@
 (tests
   (names
+        cCHPOCheckCopyRangeFrameTest
+        cCHPOCheckCopyRangeLegacyTest
         cCHProofReloadTest
         cCHPOCheckGlobalFieldCopyTest
         cCHPOCheckGlobalFieldLegacyTest
@@ -44,6 +46,10 @@
         cCHPOCheckNullableAliasTest
         )
   (deps
+        testinputs/PCopyRangeFrame/copy_range_frame.cch.tar.gz
+        testinputs/PCopyRangeFrame/copy_range_frame_c.xml
+        testinputs/PCopyRangeLegacy/copy_range_legacy.cch.tar.gz
+        testinputs/PCopyRangeLegacy/copy_range_legacy_c.xml
         testinputs/PGlobalFieldCopy/global_field_copy.cch.tar.gz
         testinputs/PGlobalFieldCopy/global_field_copy_c.xml
         testinputs/PGlobalFieldLegacy/global_field_legacy.cch.tar.gz
